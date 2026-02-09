@@ -4,11 +4,9 @@ import roleRoutes from "./routes/roleRoutes";
 
 const app = express();
 
-// allow frontend to call backend
 app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:5173" }));
 app.use(express.json());
 
-// simple in-memory users for demo integration
 let users = [
   { id: 1, name: "Alice" },
   { id: 2, name: "Bob" },
@@ -21,7 +19,6 @@ app.get("/", (_req, res) => {
 
 app.use("/api/roles", roleRoutes);
 
-// users API (demo)
 app.get("/api/users", (_req, res) => {
   res.json(users);
 });
@@ -35,7 +32,6 @@ app.post("/api/users", (req, res) => {
   res.status(201).json(user);
 });
 
-// start server
 app.listen(4000, () => {
   console.log("Server running on http://localhost:4000");
 });
