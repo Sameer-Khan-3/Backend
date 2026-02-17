@@ -1,10 +1,9 @@
 import { Router } from "express";
 import { getUsers } from "../controllers/user.controller";
-import { authenticate } from "../middlewares/auth.middleware";
-import { authorize } from "../middlewares/role.middleware";
+import { authenticate } from "../middleware/auth.middleware";
 
 const router = Router();
 
-router.get("/", authenticate, authorize("admin"), getUsers);
+router.get("/", authenticate, getUsers);
 
 export default router;

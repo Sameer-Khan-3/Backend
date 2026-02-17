@@ -1,27 +1,25 @@
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { userService } from "../services/user.service";
 
-const SECRET = "mysecret";
+const JWT_SECRET = process.env.JWT_SECRET || "devsecret";
 
 export const login = (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  const user = userService.findByEmail(email);
-
-  if (!user) {
-    return res.status(401).json({ message: "User not found" });
+  // TEMP dummy validation
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password required" });
   }
 
-  if (user.password !== password) {
-    return res.status(401).json({ message: "Invalid password" });
-  }
-
+  // 🔥 THIS IS IMPORTANT
   const token = jwt.sign(
-    { id: user.id, role: user.role },
-    SECRET,
+    { email },
+    JWT_SECRET,
     { expiresIn: "1h" }
   );
 
-  res.json({ token });
+  return res.status(200).json({
+    message: "User logged in",
+    token: token
+  });
 };
