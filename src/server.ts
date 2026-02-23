@@ -5,7 +5,6 @@ import { AppDataSource } from "./config/data-source";
 
 dotenv.config();
 
-
 const PORT = 4000;
 AppDataSource.initialize()
   .then(() => {
@@ -13,7 +12,7 @@ AppDataSource.initialize()
 
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
-});
+    });
   })
   .catch((err) => {
     console.error("Error during Data Source initialization", err);

@@ -102,4 +102,17 @@ WEEK-3----Database Integration & First AWS Deployment
         Node.js runtime
         Environment variables configured
         PostgreSQl connected
+        
+WEEK 4: integrate frontend and deployed backend services
+    implemantation:
+        implement core user APIs
+        Build React Screens for viewing and managing users
+        connect frontend to deployed backend
+        Signup,login and forget password are have fully integrated and running
 
+WEEK 5:React Screens to Manage Users, Roles & Permissions
+    Implementation:
+        User management
+        Role Management
+        Permission assignment
+        Application-level access

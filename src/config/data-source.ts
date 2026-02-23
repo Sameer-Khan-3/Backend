@@ -1,9 +1,10 @@
 import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { User } from "../entities/User";
-import { Role } from "../entities/role";
-import { Permission } from "../entities/permission";
+import { Role } from "../entities/Role";
+import { Permission } from "../entities/Permission";
 import dotenv from "dotenv";
+import { Department } from "../entities/Department";
 dotenv.config();
 
 
@@ -14,10 +15,10 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER,
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB,
-  synchronize: false, // IMPORTANT: always false in production
-  logging: true,
-  entities: [User, Role, Permission],
+  synchronize: true,
+  logging: false,
+  entities: [User, Role, Permission,Department],
   migrations: ["src/migrations/*.ts"],
 });
-console.log("DB_PASSWORD:", process.env.POSTGRES_PASSWORD);
+
 

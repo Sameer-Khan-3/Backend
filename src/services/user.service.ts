@@ -1,41 +1,123 @@
-import { User } from "../models/user.model";
+import { AppDataSource } from "../config/data-source";
+import { User } from "../entities/User";
+import { Role } from "../entities/Role";
 import bcrypt from "bcrypt";
+import { Roles } from "../utils/roles.enum";
 
-const users: User[] = [];
+
+const userRepo = AppDataSource.getRepository(User);
+const roleRepo = AppDataSource.getRepository(Role);
 
 export class UserService {
-  async create(data: Omit<User, "id">) {
-    const user: User = {
+
+  // Create User with default Employee role
+  async create(data: Partial<User>) {
+
+    // Check if email or username already exists
+    const existing = await userRepo.findOne({
+      where: [
+        { email: data.email },
+        { username: data.username }
+      ]
+    });
+
+    if (existing) {
+      throw new Error("User already exists");
+    }
+
+    // Hash password
+    if (data.password) {
+      data.password = await bcrypt.hash(data.password, 10);
+    }
+
+    // IMPORTANT: Make sure this matches EXACT role name in DB
+    const employeeRole = await roleRepo.findOne({
+      where: { name: Roles.Employee }
+    });
+
+    console.log("Employee Role:", employeeRole);
+
+    if (!employeeRole) {
+      console.log("Available roles:", await roleRepo.find());
+      throw new Error("Default role not found. Seed roles first.");
+    }
+
+    const user = userRepo.create({
       ...data,
-      id: Date.now().toString(),
-      password: await bcrypt.hash(data.password, 10),
-    };
+      roles: [employeeRole]
+    });
 
-    users.push(user);
+    return await userRepo.save(user);
+  }
+
+  // Get All Users
+  async findAll() {
+    return await userRepo.find({
+      relations: ["roles", "department"]
+    });
+  }
+
+  // Get One User (UUID string)
+  async findOne(id: string) {
+    const user = await userRepo.findOne({
+      where: { id },
+      relations: ["roles", "department"]
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     return user;
   }
 
-  findAll() {
-    return users;
+  // Update User
+  async update(id: string, data: Partial<User>) {
+    const user = await this.findOne(id);
+
+    if (data.password) {
+      data.password = await bcrypt.hash(data.password, 10);
+    }
+
+    userRepo.merge(user, data);
+    return await userRepo.save(user);
   }
 
-  findById(id: string) {
-    return users.find(u => u.id === id);
+  // Delete User
+  async remove(id: string) {
+    const user = await this.findOne(id);
+    await userRepo.remove(user);
+    return { message: "User deleted successfully" };
   }
 
-  update(id: string, updates: Partial<User>) {
-    const user = users.find(u => u.id === id);
-    if (!user) return null;
+  // Assign Role to User
+  async assignRole(userId: string, roleName: string) {
 
-    Object.assign(user, updates);
-    return user;
-  }
+    const user = await userRepo.findOne({
+      where: { id: userId },
+      relations: ["roles"],
+    });
 
-  delete(id: string) {
-    const index = users.findIndex(u => u.id === id);
-    if (index === -1) return null;
+    if (!user) {
+      throw new Error("User not found");
+    }
 
-    const removed = users.splice(index, 1);
-    return removed[0];
+    const role = await roleRepo.findOne({
+      where: { name: roleName },
+    });
+
+    if (!role) {
+      throw new Error("Role not found");
+    }
+
+    const alreadyHasRole = user.roles.some(r => r.id === role.id);
+
+    if (alreadyHasRole) {
+      throw new Error("User already has this role");
+    }
+
+    user.roles.push(role);
+
+    return await userRepo.save(user);
   }
 }
