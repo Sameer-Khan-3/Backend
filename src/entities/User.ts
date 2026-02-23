@@ -4,7 +4,10 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToMany,
+  JoinTable,
 } from "typeorm";
+import { Role } from "./role";
 
 @Entity({ name: "users" })
 export class User {
@@ -25,25 +28,23 @@ export class User {
   password!: string;
 
   @Column({
-    type: "varchar",
-    length: 100,
-    default: "user",
-  })
-  role!: string;
-
-  @Column({
     type: "boolean",
     default: true,
   })
   isActive!: boolean;
 
-  @CreateDateColumn({
-    type: "timestamp",
+  // 🔥 RBAC Relation
+  @ManyToMany(() => Role, (role) => role.users, {
+    eager: true,
   })
+  @JoinTable({
+    name: "user_roles",
+  })
+  roles!: Role[];
+
+  @CreateDateColumn()
   createdAt!: Date;
 
-  @UpdateDateColumn({
-    type: "timestamp",
-  })
+  @UpdateDateColumn()
   updatedAt!: Date;
 }

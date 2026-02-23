@@ -1,36 +1,38 @@
-import jwt from "jsonwebtoken";
+import jwt, { SignOptions } from "jsonwebtoken";
 import bcrypt from "bcrypt";
-import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.config";
-import { User } from "../models/user.model";
 
-const mockUser: User = {
-  id: "1",
-  firstName: "Admin",
-  lastName: "User",
-  email: "admin@test.com",
-  password: bcrypt.hashSync("password123", 10),
-  status: "ACTIVE",
-};
+
+import { UserService } from "./user.service";
+
+const userService = new UserService();
 
 export class AuthService {
   async login(email: string, password: string) {
-    if (email !== mockUser.email || mockUser.status !== "ACTIVE") {
+    const user = await userService.findByEmail(email);
+
+    if (!user || user.status !== "ACTIVE") {
       throw new Error("Invalid credentials");
     }
 
-    const valid = await bcrypt.compare(password, mockUser.password);
+    const valid = await bcrypt.compare(password, user.password);
 
     if (!valid) {
       throw new Error("Invalid credentials");
     }
 
+    const JWT_SECRET = process.env.JWT_SECRET as string;
+
+    const options: SignOptions = {
+      expiresIn: process.env.JWT_EXPIRES_IN as SignOptions["expiresIn"] || "1h",
+    };
+
     return jwt.sign(
       {
-        id: mockUser.id,
-        email: mockUser.email,
+        id: user.id,
+        email: user.email,
       },
       JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      options
     );
   }
 }

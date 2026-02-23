@@ -1,7 +1,16 @@
 import { User } from "../models/user.model";
 import bcrypt from "bcrypt";
 
-const users: User[] = [];
+const mockUser: User = {
+  id: "1",
+  firstName: "Admin",
+  lastName: "User",
+  email: "admin@test.com",
+  password: bcrypt.hashSync("password123", 10),
+  status: "ACTIVE",
+};
+
+const users: User[] = [mockUser];
 
 export class UserService {
   async create(data: Omit<User, "id">) {
@@ -21,6 +30,10 @@ export class UserService {
 
   findById(id: string) {
     return users.find(u => u.id === id);
+  }
+
+  findByEmail(email: string) {
+    return users.find((u) => u.email === email);
   }
 
   update(id: string, updates: Partial<User>) {
