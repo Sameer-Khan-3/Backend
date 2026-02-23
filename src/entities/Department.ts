@@ -1,17 +1,27 @@
 import {
   Entity,
+  PrimaryGeneratedColumn,
   Column,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from "typeorm";
 import { User } from "./User";
-import { BaseEntity } from "./base.entity";
 
-@Entity("departments")
-export class Department extends BaseEntity {
+@Entity()
+export class Department {
+  @PrimaryGeneratedColumn()
+  id: number;
 
   @Column({ unique: true })
   name: string;
 
+  // 🔥 One department has many employees
   @OneToMany(() => User, (user) => user.department)
-  users: User[];
+  employees: User[];
+
+  // 🔥 One department has one manager
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: "managerId" })
+  manager: User;
 }

@@ -2,12 +2,17 @@ import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
 import { Role } from "../entities/Role";
 import bcrypt from "bcryptjs";
+import { AppDataSource } from "../config/data-source";
+import { User } from "../entities/User";
+import { Role } from "../entities/Role";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { IAuthService } from "../interfaces/IAuthService";
 
 const userRepo = AppDataSource.getRepository(User);
 const roleRepo = AppDataSource.getRepository(Role);
 
-export class AuthService {
+export class AuthService implements IAuthService{
 
   // ================= SIGN UP =================
   async signUp(email: string, password: string, role: string, username: string) {
@@ -46,39 +51,45 @@ export class AuthService {
     };
   }
 
-  // ================= SIGN IN =================
-  async signIn(email: string, password: string) {
+//================= SIGN IN =================
+async signIn(email: string, password: string) {
 
-    const user = await userRepo.findOne({
-      where: { email },
-      relations: ["roles"]
-    });
+  const user = await userRepo.findOne({
+    where: { email },
+    relations: ["roles"]
+  });
 
-    if (!user) throw new Error("Invalid credentials");
+  if (!user) throw new Error("Invalid credentials");
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) throw new Error("Invalid credentials");
+  const match = await bcrypt.compare(password, user.password);
+  if (!match) throw new Error("Invalid credentials");
 
-    const token = this.generateToken(user);
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        roles: user.roles.map(r => r.name)
-      },
-      token
-    };
+  // ADD THIS BLOCK
+  if (user.mustChangePassword) {
+    throw new Error("PASSWORD_CHANGE_REQUIRED");
   }
 
+  const token = this.generateToken(user);
+
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      roles: user.roles.map(r => r.name)
+    },
+    token
+  };
+}
   // ================= JWT =================
   private generateToken(user: User) {
 
     return jwt.sign(
       {
         id: user.id,
-        roles: user.roles?.map(r => r.name) || []
+        roles: user.roles?.map(r => r.name.toUpperCase()) || []
       },
+      process.env.JWT_SECRET as string,
+      { expiresIn: "1d" }
       process.env.JWT_SECRET as string,
       { expiresIn: "1d" }
     );

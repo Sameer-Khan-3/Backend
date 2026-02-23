@@ -3,6 +3,10 @@ import { AuthService } from "../services/auth.service";
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
 import bcrypt from "bcryptjs";
+import { AuthService } from "../services/auth.service";
+import { AppDataSource } from "../config/data-source";
+import { User } from "../entities/User";
+import bcrypt from "bcryptjs";
 
 const authService = new AuthService();
 
@@ -26,13 +30,22 @@ export async function signUp(req: Request, res: Response) {
 export async function signIn(req: Request, res: Response) {
   try {
     const { email, password } = req.body;
+    
 
     const data = await authService.signIn(email, password);
 
     res.status(200).json(data);
   } catch (error: any) {
-    res.status(401).json({ message: error.message });
+
+  if (error.message === "PASSWORD_CHANGE_REQUIRED") {
+    return res.status(403).json({
+      message: "Password change required",
+      mustChangePassword: true
+    });
   }
+
+  res.status(401).json({ message: error.message });
+}
 }
 
 export const resetPasswordDirect = async (req: Request, res: Response) => {
@@ -53,6 +66,7 @@ export const resetPasswordDirect = async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
+    user.mustChangePassword = false;
 
     await userRepository.save(user);
 

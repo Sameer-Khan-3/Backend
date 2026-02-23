@@ -6,40 +6,38 @@ import {
   getUser,
   updateUser,
   deleteUser,
+  createUser
 } from "../controllers/user.controller";
+import { getUsersByDepartment} from "../controllers/user.controller";
+
 import { authenticate } from "../middleware/auth.middleware";
+import { authorizeRoles } from "../middleware/role.middleware";
 import { authorizeRoles } from "../middleware/role.middleware";
 
 const router = Router();
 
+// CREATE user (ADMIN only)
+router.post("/", authenticate, authorizeRoles("Admin"), createUser);
+
 // GET all users (ADMIN only)
-router.get(
-  "/",
-  authenticate,
-  authorizeRoles("ADMIN"),
-  getUsers
-);
+router.get("/", authenticate, authorizeRoles("Admin"), getUsers);
 
-// GET single user (authenticated users only)
-router.get(
-  "/:id",
-  authenticate,
-  getUser
-);
+router.delete("/users/:id", deleteUser);
 
-// UPDATE user (authenticated users only)
-router.put(
-  "/:id",
+
+router.get(
+  "/department",
   authenticate,
-  updateUser
+  authorizeRoles("Employee", "Manager"),
+  getUsersByDepartment
 );
+// GET single user (authenticated)
+router.get("/:id", authenticate, getUser);
+
+// UPDATE user (authenticated)
+router.put("/:id", authenticate, updateUser);
 
 // DELETE user (ADMIN only)
-router.delete(
-  "/:id",
-  authenticate,
-  authorizeRoles("ADMIN"),
-  deleteUser
-);
+router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteUser);
 
 export default router;
