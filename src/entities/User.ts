@@ -2,49 +2,36 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  ManyToMany,
-  JoinTable,
+  OneToMany,
 } from "typeorm";
-import { Role } from "./role";
 
-@Entity({ name: "users" })
+
+@Entity()
 export class User {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({
-    type: "varchar",
-    length: 150,
-    unique: true,
-  })
+  @Column({ unique: true })
   email!: string;
 
-  @Column({
-    type: "varchar",
-    length: 255,
-  })
+  @Column({ unique: true })
+  username!: string;
+
+  @Column({select: false})
   password!: string;
+  
+  @Column()
+  role!: string;
 
-  @Column({
-    type: "boolean",
-    default: true,
-  })
-  isActive!: boolean;
+  @Column({ nullable: true})
+  resetToken!: string;
 
-  // 🔥 RBAC Relation
-  @ManyToMany(() => Role, (role) => role.users, {
-    eager: true,
-  })
-  @JoinTable({
-    name: "user_roles",
-  })
-  roles!: Role[];
+  @Column({ type: "timestamp", nullable: true})
+  resetTokenExpiry!: Date;
 
-  @CreateDateColumn()
-  createdAt!: Date;
+  @Column({ nullable: true })
+  resetToken: string;
 
-  @UpdateDateColumn()
-  updatedAt!: Date;
+  @Column({type: "timestamp", nullable: true})
+  resetTokenExpiry: Date;
 }

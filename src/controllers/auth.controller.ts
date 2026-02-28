@@ -1,25 +1,75 @@
 import { Request, Response } from "express";
-import jwt from "jsonwebtoken";
+import { AuthService } from "../services/auth.service";
+import { AppDataSource } from "../config/data-source";
+import { User } from "../entities/User";
+import { bcrypt } from "bcryptjs";
 
-const JWT_SECRET = process.env.JWT_SECRET || "devsecret";
+const authService = new AuthService();
 
-export const login = (req: Request, res: Response) => {
-  const { email, password } = req.body;
+export async function signUp(req: Request, res: Response) {
+  try {
+    const { email, password, role, username } = req.body;
 
-  // TEMP dummy validation
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password required" });
+    const data = await authService.signUp(
+      email,
+      password,
+      role,
+      username
+    );
+
+    res.status(201).json(data);
+  } catch (error: any) {
+    res.status(400).json({ message: error.message });
   }
+}
 
-  // 🔥 THIS IS IMPORTANT
-  const token = jwt.sign(
-    { email },
-    JWT_SECRET,
-    { expiresIn: "1h" }
-  );
+export async function signIn(req: Request, res: Response) {
+  try {
+    const { email, password } = req.body;
 
-  return res.status(200).json({
-    message: "User logged in",
-    token: token
-  });
+    const data = await authService.signIn(email, password);
+
+    res.status(200).json(data);
+  } catch (error: any) {
+    res.status(401).json({ message: error.message });
+  }
+}
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: "Token and password required" });
+    }
+
+    const userRepository = AppDataSource.getRepository(User);
+
+    const user = await userRepository.findOne({
+      where: { resetToken: token }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid token" });
+    }
+
+    if (!user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
+      return res.status(400).json({ message: "Token expired" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    user.password = hashedPassword;
+    user.resetToken = null;
+    user.resetTokenExpiry = null;
+
+    await userRepository.save(user);
+
+    return res.status(200).json({ message: "Password reset successful" });
+
+  } catch (error) {
+    console.error("Reset Password Error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+  console.log(req.body);
 };

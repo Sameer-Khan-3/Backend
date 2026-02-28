@@ -4,28 +4,46 @@ import { UserService } from "../services/user.service";
 const service = new UserService();
 
 export async function createUser(req: Request, res: Response) {
-  const user = await service.create(req.body);
-  res.status(201).json(user);
+  try {
+    const user = await service.create(req.body);
+    res.status(201).json(user);
+  } catch (error: any) {
+    res.status(400).json({ message: error.message });
+  }
 }
 
-export function getUsers(req: Request, res: Response) {
-  res.json(service.findAll());
+export async function getUsers(req: Request, res: Response) {
+  try {
+    const users = await service.findAll();
+    res.json(users);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
 }
 
-export function getUserById(req: Request, res: Response) {
-  const user = service.findById(req.params.id);
-  if (!user) return res.status(404).json({ message: "Not found" });
-  res.json(user);
+export async function getUser(req: Request, res: Response) {
+  try {
+    const user = await service.findOne(Number(req.params.id));
+    res.json(user);
+  } catch (error: any) {
+    res.status(404).json({ message: error.message });
+  }
 }
 
-export function updateUser(req: Request, res: Response) {
-  const user = service.update(req.params.id, req.body);
-  if (!user) return res.status(404).json({ message: "Not found" });
-  res.json(user);
+export async function updateUser(req: Request, res: Response) {
+  try {
+    const user = await service.update(Number(req.params.id), req.body);
+    res.json(user);
+  } catch (error: any) {
+    res.status(400).json({ message: error.message });
+  }
 }
 
-export function deleteUser(req: Request, res: Response) {
-  const user = service.delete(req.params.id);
-  if (!user) return res.status(404).json({ message: "Not found" });
-  res.json({ message: "Deleted successfully" });
+export async function deleteUser(req: Request, res: Response) {
+  try {
+    const result = await service.remove(Number(req.params.id));
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ message: error.message });
+  }
 }
