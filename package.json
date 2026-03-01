@@ -7,7 +7,8 @@
     "start": "node dist/server.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "typeorm": "ts-node ./node_modules/typeorm/cli.js"
+    "typeorm": "ts-node ./node_modules/typeorm/cli.js",
+    "seed": "ts-node src/seeds/seed.ts"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

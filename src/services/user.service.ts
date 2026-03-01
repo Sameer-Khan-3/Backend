@@ -1,12 +1,16 @@
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
+import { Role } from "../entities/Role";
+import bcrypt from "bcrypt";
 
 const userRepo = AppDataSource.getRepository(User);
+const roleRepo = AppDataSource.getRepository(Role);
 
 export class UserService {
 
-  // Create User
+  // Create User with default EMPLOYEE role
   async create(data: Partial<User>) {
+
     const existing = await userRepo.findOne({
       where: [{ email: data.email }, { username: data.username }]
     });
@@ -15,19 +19,41 @@ export class UserService {
       throw new Error("User already exists");
     }
 
-    const user = userRepo.create(data);
+    // Hash password
+    if (data.password) {
+      data.password = await bcrypt.hash(data.password, 10);
+    }
+
+    // Find EMPLOYEE role
+    const employeeRole = await roleRepo.findOne({
+      where: { name: "EMPLOYEE" }
+    });
+
+    if (!employeeRole) {
+      throw new Error("Default role not found. Run seed first.");
+    }
+
+    // Create user
+    const user = userRepo.create({
+      ...data,
+      roles: [employeeRole]   //Assign default role here
+    });
+
     return await userRepo.save(user);
   }
 
   // Get All Users
   async findAll() {
-    return await userRepo.find();
+    return await userRepo.find({
+      relations: ["roles"]
+    });
   }
 
   // Get One User
   async findOne(id: number) {
     const user = await userRepo.findOne({
-      where: { id }
+      where: { id },
+      relations: ["roles"]
     });
 
     if (!user) {
