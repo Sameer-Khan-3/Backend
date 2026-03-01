@@ -50,7 +50,7 @@ export class UserService {
   }
 
   // Get One User
-  async findOne(id: number) {
+  async findOne(id: string) {
     const user = await userRepo.findOne({
       where: { id },
       relations: ["roles"]
@@ -64,7 +64,7 @@ export class UserService {
   }
 
   // Update User
-  async update(id: number, data: Partial<User>) {
+  async update(id: string, data: Partial<User>) {
     const user = await this.findOne(id);
 
     userRepo.merge(user, data);
@@ -72,7 +72,7 @@ export class UserService {
   }
 
   // Delete User
-  async remove(id: number) {
+  async remove(id: string) {
     const user = await this.findOne(id);
     await userRepo.remove(user);
 
