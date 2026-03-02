@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { AuthService } from "../services/auth.service";
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
-import { bcrypt } from "bcryptjs";
+import bcrypt from "bcryptjs";
 
 const authService = new AuthService();
 
@@ -35,41 +35,30 @@ export async function signIn(req: Request, res: Response) {
   }
 }
 
-export const resetPassword = async (req: Request, res: Response) => {
+export const resetPasswordDirect = async (req: Request, res: Response) => {
   try {
-    const { token, newPassword } = req.body;
+    const { email, newPassword } = req.body;
 
-    if (!token || !newPassword) {
-      return res.status(400).json({ message: "Token and password required" });
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: "Email and new password required" });
     }
 
     const userRepository = AppDataSource.getRepository(User);
 
-    const user = await userRepository.findOne({
-      where: { resetToken: token }
-    });
+    const user = await userRepository.findOne({ where: { email } });
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid token" });
-    }
-
-    if (!user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
-      return res.status(400).json({ message: "Token expired" });
+      return res.status(404).json({ message: "User not found" });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-
     user.password = hashedPassword;
-    user.resetToken = null;
-    user.resetTokenExpiry = null;
 
     await userRepository.save(user);
 
-    return res.status(200).json({ message: "Password reset successful" });
-
-  } catch (error) {
-    console.error("Reset Password Error:", error);
-    return res.status(500).json({ message: "Server error" });
+    return res.status(200).json({ message: "Password updated successfully" });
+  } catch (error: any) {
+    console.error("Direct Reset Password Error:", error);
+    return res.status(500).json({ message: error.message || "Server error" });
   }
-  console.log(req.body);
 };

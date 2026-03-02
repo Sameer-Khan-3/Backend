@@ -10,7 +10,7 @@ const roleRepo = AppDataSource.getRepository(Role);
 export class AuthService {
 
   // ================= SIGN UP =================
-  async signUp(email: string, password: string) {
+  async signUp(email: string, password: string, role: string, username: string) {
 
     const existing = await userRepo.findOne({ where: { email } });
     if (existing) throw new Error("User already exists");
@@ -19,7 +19,7 @@ export class AuthService {
 
     // Default role
     const defaultRole = await roleRepo.findOne({
-      where: { name: "user" }
+      where: { name: "Employee" }
     });
 
     if (!defaultRole) {
@@ -29,7 +29,8 @@ export class AuthService {
     const user = userRepo.create({
       email,
       password: hashedPassword,
-      roles: [defaultRole]
+      roles: [defaultRole],
+      username: username
     });
 
     await userRepo.save(user);

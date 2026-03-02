@@ -8,11 +8,15 @@ const roleRepo = AppDataSource.getRepository(Role);
 
 export class UserService {
 
-  // Create User with default EMPLOYEE role
+  // Create User with default Employee role
   async create(data: Partial<User>) {
 
+    // Check if email or username already exists
     const existing = await userRepo.findOne({
-      where: [{ email: data.email }, { username: data.username }]
+      where: [
+        { email: data.email },
+        { username: data.username }
+      ]
     });
 
     if (existing) {
@@ -24,19 +28,21 @@ export class UserService {
       data.password = await bcrypt.hash(data.password, 10);
     }
 
-    // Find EMPLOYEE role
+    // IMPORTANT: Make sure this matches EXACT role name in DB
     const employeeRole = await roleRepo.findOne({
-      where: { name: "EMPLOYEE" }
+      where: { name: "Employee" }
     });
 
+    console.log("Employee Role:", employeeRole);
+
     if (!employeeRole) {
-      throw new Error("Default role not found. Run seed first.");
+      console.log("Available roles:", await roleRepo.find());
+      throw new Error("Default role not found. Seed roles first.");
     }
 
-    // Create user
     const user = userRepo.create({
       ...data,
-      roles: [employeeRole]   //Assign default role here
+      roles: [employeeRole]
     });
 
     return await userRepo.save(user);
@@ -49,7 +55,7 @@ export class UserService {
     });
   }
 
-  // Get One User
+  // Get One User (UUID string)
   async findOne(id: string) {
     const user = await userRepo.findOne({
       where: { id },
@@ -67,6 +73,10 @@ export class UserService {
   async update(id: string, data: Partial<User>) {
     const user = await this.findOne(id);
 
+    if (data.password) {
+      data.password = await bcrypt.hash(data.password, 10);
+    }
+
     userRepo.merge(user, data);
     return await userRepo.save(user);
   }
@@ -75,7 +85,37 @@ export class UserService {
   async remove(id: string) {
     const user = await this.findOne(id);
     await userRepo.remove(user);
-
     return { message: "User deleted successfully" };
+  }
+
+  // Assign Role to User
+  async assignRole(userId: string, roleName: string) {
+
+    const user = await userRepo.findOne({
+      where: { id: userId },
+      relations: ["roles"],
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const role = await roleRepo.findOne({
+      where: { name: roleName },
+    });
+
+    if (!role) {
+      throw new Error("Role not found");
+    }
+
+    const alreadyHasRole = user.roles.some(r => r.id === role.id);
+
+    if (alreadyHasRole) {
+      throw new Error("User already has this role");
+    }
+
+    user.roles.push(role);
+
+    return await userRepo.save(user);
   }
 }

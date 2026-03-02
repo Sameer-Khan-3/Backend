@@ -17,7 +17,7 @@ export class User {
   @PrimaryGeneratedColumn("uuid")
   id: string;
 
-  @Column({ unique: true })
+  @Column()
   username: string;
 
   @Column({ unique: true, length: 150 })
@@ -28,6 +28,12 @@ export class User {
 
   @Column({ default: true })
   isActive: boolean;
+
+  @Column({ nullable: true })
+  resetToken: string;
+
+  @Column({ type: "timestamp", nullable: true })
+  resetTokenExpiry: Date;
 
   @ManyToOne(() => Department, (department) => department.users, {
     nullable: true,
