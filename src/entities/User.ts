@@ -1,21 +1,17 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
   Column,
   ManyToMany,
   ManyToOne,
   JoinTable,
   JoinColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
 } from "typeorm";
 import { Role } from "./Role";
 import { Department } from "./Department";
+import { BaseEntity } from "./base.entity";
 
 @Entity("users")
-export class User {
-  @PrimaryGeneratedColumn("uuid")
-  id: string;
+export class User extends BaseEntity {
 
   @Column()
   username: string;
@@ -32,9 +28,12 @@ export class User {
   @Column({ nullable: true })
   resetToken: string;
 
-  @Column({ type: "timestamp", nullable: true })
+  @Column({ type: "timestamptz", nullable: true })
   resetTokenExpiry: Date;
 
+  /**
+   * User - Department
+   */
   @ManyToOne(() => Department, (department) => department.users, {
     nullable: true,
     onDelete: "SET NULL",
@@ -42,6 +41,9 @@ export class User {
   @JoinColumn({ name: "department_id" })
   department: Department;
 
+  /**
+   * User - Role
+   */
   @ManyToMany(() => Role, (role) => role.users)
   @JoinTable({
     name: "user_roles",
@@ -55,10 +57,4 @@ export class User {
     },
   })
   roles: Role[];
-
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
 }

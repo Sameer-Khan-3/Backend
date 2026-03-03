@@ -1,6 +1,5 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
   Column,
   ManyToMany,
   JoinTable,
@@ -9,24 +8,27 @@ import {
 } from "typeorm";
 import { Permission } from "./Permission";
 import { User } from "./User";
+import { BaseEntity } from "./base.entity";
 
-enum Roles {
-  Employee,
-  Manager,
-  Admin,
-  SuperAdmin,
+export enum Roles {
+  Employee = "Employee",
+  Manager = "Manager",
+  Admin = "Admin",
+  SuperAdmin = "SuperAdmin",
 }
-@Entity("roles")
-export class Role {
-  @PrimaryGeneratedColumn("uuid")
-  id: string;
 
-  @Column({ unique: true })
-  name: string;
+@Entity("roles")
+export class Role extends BaseEntity {
+
+  @Column({
+    type: "enum",
+    enum: Roles,
+    unique: true,
+  })
+  name: Roles;
 
   /**
-   * Manager → parent = Admin
-   * Employee → parent = Manager
+   * Role hierarchy
    */
   @ManyToOne(() => Role, (role) => role.children, {
     nullable: true,
@@ -38,7 +40,7 @@ export class Role {
   children: Role[];
 
   /**
-   *Role - Permission Mapping
+   * Role - Permission Mapping
    */
   @ManyToMany(() => Permission, (permission) => permission.roles)
   @JoinTable({

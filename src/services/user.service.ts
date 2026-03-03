@@ -2,6 +2,8 @@ import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
 import { Role } from "../entities/Role";
 import bcrypt from "bcrypt";
+import { Roles } from "../utils/roles.enum";
+
 
 const userRepo = AppDataSource.getRepository(User);
 const roleRepo = AppDataSource.getRepository(Role);
@@ -30,7 +32,7 @@ export class UserService {
 
     // IMPORTANT: Make sure this matches EXACT role name in DB
     const employeeRole = await roleRepo.findOne({
-      where: { name: "Employee" }
+      where: { name: Roles.Employee }
     });
 
     console.log("Employee Role:", employeeRole);

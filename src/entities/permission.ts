@@ -5,12 +5,10 @@ import {
   ManyToMany,
 } from "typeorm";
 import { Role } from "./Role";
+import { BaseEntity } from "./base.entity";
 
 @Entity("permissions")
-export class Permission {
-  @PrimaryGeneratedColumn("uuid")
-  id: string;
-
+export class Permission extends BaseEntity {
   @Column({ unique: true })
   name: string;
 

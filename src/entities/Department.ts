@@ -1,15 +1,13 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
   Column,
   OneToMany,
 } from "typeorm";
 import { User } from "./User";
+import { BaseEntity } from "./base.entity";
 
 @Entity("departments")
-export class Department {
-  @PrimaryGeneratedColumn("uuid")
-  id: string;
+export class Department extends BaseEntity {
 
   @Column({ unique: true })
   name: string;
