@@ -109,6 +109,30 @@ export class UserService {
       throw new Error("User not found");
     }
 
+      roles: [employeeRole]
+    });
+
+    return await userRepo.save(user);
+  }
+
+  // Get All Users
+  async findAll() {
+    return await userRepo.find({
+      relations: ["roles", "department"]
+    });
+  }
+
+  // Get One User (UUID string)
+  async findOne(id: string) {
+    const user = await userRepo.findOne({
+      where: { id },
+      relations: ["roles", "department"]
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     return user;
   }
 
