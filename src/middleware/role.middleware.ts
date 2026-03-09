@@ -3,9 +3,6 @@ import { AuthRequest } from "./auth.middleware";
 
 export function authorizeRoles(...allowedRoles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-
-    console.log("Decoded user:", req.user);
-    console.log("Allowed roles:", allowedRoles);
     if (!req.user || !req.user.roles) {
       return res.status(403).json({ message: "Forbidden" });
     }
@@ -24,17 +21,4 @@ export function authorizeRoles(...allowedRoles: string[]) {
 
     next();
   };
-}
-
-import { Response, NextFunction } from "express";
-import { AuthRequest } from "./auth.middleware";
-
-export function authorizeRoles(...roles: string[]){
-    return(req: AuthRequest, res: Response, next: NextFunction) => {
-        if(!req.user || !roles.includes(req.user.role)){
-            return res.status(403).json({ message: "Forbidden" });
-        }
-        next();
-    }
-
 }

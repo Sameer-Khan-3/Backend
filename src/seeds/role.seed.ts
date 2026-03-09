@@ -1,50 +1,25 @@
 import { AppDataSource } from "../config/data-source";
 import { Role } from "../entities/Role";
 
-const defaultRoles = [
-  { name: "SuperAdmin", parent: null },
-  { name: "Admin", parent: "SuperAdmin" },
-  { name: "Manager", parent: "Admin" },
-  { name: "Employee", parent: "Manager" },
-];
+const defaultRoles = ["SuperAdmin", "Admin", "Manager", "Employee"];
 
 export async function seedRoles() {
   const roleRepo = AppDataSource.getRepository(Role);
 
-  for (const roleData of defaultRoles) {
-    // Check if role already exists
+  for (const roleName of defaultRoles) {
     const exists = await roleRepo.findOne({
-      where: { name: roleData.name },
+      where: { name: roleName },
     });
 
     if (exists) {
-      console.log(`Role ${roleData.name} already exists`);
+      console.log(`Role ${roleName} already exists`);
       continue;
     }
 
-    // Find parent role if exists
-    let parentRole = null;
-    if (roleData.parent) {
-      parentRole = await roleRepo.findOne({
-        where: { name: roleData.parent },
-      });
-
-      if (!parentRole) {
-        console.warn(
-          `Parent role ${roleData.parent} not found for ${roleData.name}`
-        );
-      }
-    }
-
-    // Create role
-    const role = roleRepo.create({
-      name: roleData.name,
-      parent: parentRole,
-    });
-
+    const role = roleRepo.create({ name: roleName });
     await roleRepo.save(role);
-    console.log(`Role ${roleData.name} created`);
+    console.log(`Role ${roleName} created`);
   }
 
-  console.log("Employee-Manager hierarchy seeded successfully");
+  console.log("Roles seeded successfully");
 }
