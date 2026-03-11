@@ -1,6 +1,6 @@
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
-import { Role } from "../entities/Role";
+import { Role } from "../entities/role";
 import bcrypt from "bcrypt";
 import { Roles } from "../utils/roles.enum";
 
@@ -31,7 +31,7 @@ export class UserService {
 
     const user = userRepo.create({
       ...data,
-      roles: [employeeRole],
+      role: employeeRole,
     });
 
     return userRepo.save(user);
@@ -39,14 +39,14 @@ export class UserService {
 
   async findAll() {
     return userRepo.find({
-      relations: ["roles", "department"],
+      relations: ["role", "department"],
     });
   }
 
   async findOne(id: string) {
     const user = await userRepo.findOne({
       where: { id },
-      relations: ["roles", "department"],
+      relations: ["role", "department"],
     });
 
     if (!user) {
@@ -71,32 +71,5 @@ export class UserService {
     const user = await this.findOne(id);
     await userRepo.remove(user);
     return { message: "User deleted successfully" };
-  }
-
-  async assignRole(userId: string, roleName: string) {
-    const user = await userRepo.findOne({
-      where: { id: userId },
-      relations: ["roles"],
-    });
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    const role = await roleRepo.findOne({
-      where: { name: roleName },
-    });
-
-    if (!role) {
-      throw new Error("Role not found");
-    }
-
-    const alreadyHasRole = user.roles.some((r) => r.id === role.id);
-    if (alreadyHasRole) {
-      throw new Error("User already has this role");
-    }
-
-    user.roles.push(role);
-    return userRepo.save(user);
   }
 }

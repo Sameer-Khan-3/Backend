@@ -44,7 +44,7 @@ export const seedAdmin = async () => {
     password: hashedPassword,
     isActive: true,
     mustChangePassword: true, // 🔥 important
-    roles: [adminRole],
+    role: adminRole,
   });
 
   await userRepo.save(adminUser);

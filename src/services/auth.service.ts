@@ -30,7 +30,7 @@ export class AuthService implements IAuthService {
     const user = userRepo.create({
       email,
       password: hashedPassword,
-      roles: [defaultRole],
+      role: defaultRole,
       username,
     });
 
@@ -49,7 +49,7 @@ export class AuthService implements IAuthService {
   async signIn(email: string, password: string) {
     const user = await userRepo.findOne({
       where: { email },
-      relations: ["roles"],
+      relations: ["role"],
     });
 
     if (!user) throw new Error("Invalid credentials");
@@ -67,7 +67,7 @@ export class AuthService implements IAuthService {
       user: {
         id: user.id,
         email: user.email,
-        roles: user.roles.map((r) => r.name),
+        role: user.role?.name ?? null,
       },
       token,
     };
@@ -77,7 +77,8 @@ export class AuthService implements IAuthService {
     return jwt.sign(
       {
         id: user.id,
-        roles: user.roles?.map((r) => r.name.toUpperCase()) || [],
+        role: user.role?.name?.toUpperCase() || null,
+        roles: user.role?.name ? [user.role.name.toUpperCase()] : [],
       },
       process.env.JWT_SECRET as string,
       { expiresIn: "1d" }

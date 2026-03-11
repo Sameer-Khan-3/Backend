@@ -12,16 +12,11 @@ import { authorizeRoles } from "../middleware/role.middleware";
 
 const router = Router();
 
-router.post("/", authenticate, authorizeRoles("Admin"), createUser);
+router.post("/", authenticate, authorizeRoles("Admin", "Manager"), createUser);
 router.get("/", authenticate, authorizeRoles("Admin"), getUsers);
-router.get(
-  "/department",
-  authenticate,
-  authorizeRoles("Employee", "Manager"),
-  getUsersByDepartment
-);
-router.get("/:id", authenticate, getUser);
-router.put("/:id", authenticate, updateUser);
+router.get("/department", authenticate, authorizeRoles("Admin", "Employee", "Manager"), getUsersByDepartment);
+router.get("/:id", authenticate, authorizeRoles("Admin", "Manager", "Employee"), getUser);
+router.put("/:id", authenticate, authorizeRoles("Admin", "Manager"), updateUser);
 router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteUser);
 
 export default router;

@@ -15,7 +15,10 @@ export const seedRBAC = async () => {
     "delete_user",
     "view_users",
     "assign_role",
-    "manage_departments",
+    "create_department",
+    "update_department",
+    "delete_department",
+    "view_departments",
     "view_self",
   ];
 

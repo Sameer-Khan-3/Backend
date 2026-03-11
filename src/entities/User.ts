@@ -1,7 +1,7 @@
-import { Entity, Column, ManyToOne, ManyToMany, JoinTable } from "typeorm";
+import { Entity, Column, ManyToOne, JoinColumn } from "typeorm";
 import { BaseEntity } from "./base.entity";
 import { Department } from "./Department";
-import { Role } from "./Role";
+import { Role } from "./role";
 
 @Entity("users")
 export class User extends BaseEntity {
@@ -34,7 +34,10 @@ export class User extends BaseEntity {
   @Column({ nullable: true })
   departmentId: string | null;
 
-  @ManyToMany(() => Role, (role) => role.users)
-  @JoinTable({ name: "user_roles" })
-  roles: Role[];
+  @ManyToOne(() => Role, (role) => role.users, { nullable: true })
+  @JoinColumn({ name: "roleId" })
+  role: Role | null;
+
+  @Column({ nullable: true })
+  roleId: string | null;
 }

@@ -3,7 +3,7 @@ import { AuthRequest } from "./auth.middleware";
 
 export function authorizeRoles(...allowedRoles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !req.user.roles) {
+    if (!req.user) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
@@ -11,9 +11,18 @@ export function authorizeRoles(...allowedRoles: string[]) {
       role.toLowerCase()
     );
 
-    const hasRole = req.user.roles.some((role: string) =>
-      normalizedAllowedRoles.includes(role.toLowerCase())
-    );
+    const tokenRole =
+      typeof req.user.role === "string"
+        ? req.user.role
+        : Array.isArray(req.user.roles)
+        ? req.user.roles[0]
+        : null;
+
+    if (!tokenRole) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const hasRole = normalizedAllowedRoles.includes(tokenRole.toLowerCase());
 
     if (!hasRole) {
       return res.status(403).json({ message: "Forbidden" });

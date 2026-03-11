@@ -1,5 +1,6 @@
 import { AppDataSource } from "../config/data-source";
-import { seedRoles } from "./role.seed";
+import { seedRBAC } from "./rbac.seed";
+import { seedAdmin } from "./admin.seed";
 
 async function runSeeds() {
   try {
@@ -7,8 +8,9 @@ async function runSeeds() {
     await AppDataSource.initialize();
     console.log("Database connected successfully");
 
-    // Run role seeder
-    await seedRoles();
+    // Run RBAC + Admin seeders
+    await seedRBAC();
+    await seedAdmin();
 
     console.log("All seeds executed successfully");
     process.exit(0);

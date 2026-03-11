@@ -16,9 +16,10 @@ export class DepartmentService {
     return await departmentRepo.save(department);
   }
 
-  async assignManager(departmentId: number, userId: string) {
+  async assignManager(departmentId: string, userId: string) {
     const department = await departmentRepo.findOne({
       where: { id: departmentId },
+      relations: ["manager"],
     });
 
     if (!department) throw new Error("Department not found");
@@ -26,22 +27,61 @@ export class DepartmentService {
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) throw new Error("User not found");
 
+    const existingManagerDept = await departmentRepo.findOne({
+      where: { manager: { id: userId } },
+      relations: ["manager"],
+    });
+
+    if (existingManagerDept && existingManagerDept.id !== departmentId) {
+      throw new Error("Manager is already assigned to another department");
+    }
+
+    if (department.manager && department.manager.id !== userId) {
+      throw new Error("Department already has a manager");
+    }
+
     department.manager = user;
     return await departmentRepo.save(department);
   }
 
-  async assignUserToDepartment(userId: string, departmentId: number){
-    const user = await userRepo.findOne({ where: { id: userId } });
+  async assignUserToDepartment(userId: string, departmentId: string){
+    const user = await userRepo.findOne({
+      where: { id: userId },
+      relations: ["role"],
+    });
     if(!user) throw new Error("User Not Found");
     
-    const department = await departmentRepo.findOne({ where: {id: departmentId},});
+    const department = await departmentRepo.findOne({
+      where: { id: departmentId },
+      relations: ["manager"],
+    });
     if(!department) throw new Error("Department Not Found");
+
+    const isManager = user.role?.name?.toLowerCase() === "manager";
+
+    if (isManager) {
+      const existingManagerDept = await departmentRepo.findOne({
+        where: { manager: { id: userId } },
+        relations: ["manager"],
+      });
+
+      if (existingManagerDept && existingManagerDept.id !== departmentId) {
+        throw new Error("Manager is already assigned to another department");
+      }
+
+      if (department.manager && department.manager.id !== userId) {
+        throw new Error("Department already has a manager");
+      }
+
+      department.manager = user;
+      await departmentRepo.save(department);
+    }
     
     user.department = department;
     return await userRepo.save(user);
   }
 
-  async getDepartmentById(id: number){
+  async getDepartmentById(id: string){
     const department = await departmentRepo.findOne({
         where: { id },
         relations: ["manager", "employees"],
@@ -50,17 +90,17 @@ export class DepartmentService {
     return department;
   }
 
-  async updateDepartment(id: number, name: string){
+  async updateDepartment(id: string, name: string){
     const department = await departmentRepo.findOne({
         where: { id },
     });
     if(!department) throw new Error("Department not Found");
 
-    department.name = name;
+    department.name = name.trim();
     return await departmentRepo.save(department);
   }
 
-  async deleteDepartment(id: number){
+  async deleteDepartment(id: string){
     const department = await departmentRepo.findOne({
         where: {id},
         relations: ["employees"],

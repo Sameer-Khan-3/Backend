@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { AuthService } from "../services/auth.service";
 import { AppDataSource } from "../config/data-source";
@@ -6,9 +7,33 @@ import { User } from "../entities/User";
 
 const authService = new AuthService();
 
+const signUpSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  role: z.string().optional(),
+  username: z.string().trim().min(1, "Username is required"),
+});
+
+const signInSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  password: z.string().min(1, "Password is required"),
+});
+
+const resetPasswordDirectSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  newPassword: z.string().min(6, "Password must be at least 6 characters"),
+});
+
 export async function signUp(req: Request, res: Response) {
   try {
-    const { email, password, role, username } = req.body;
+    const parsed = signUpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Invalid request",
+        errors: parsed.error.flatten().fieldErrors,
+      });
+    }
+    const { email, password, role, username } = parsed.data;
 
     const data = await authService.signUp(email, password, role, username);
     res.status(201).json(data);
@@ -19,7 +44,14 @@ export async function signUp(req: Request, res: Response) {
 
 export async function signIn(req: Request, res: Response) {
   try {
-    const { email, password } = req.body;
+    const parsed = signInSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Invalid request",
+        errors: parsed.error.flatten().fieldErrors,
+      });
+    }
+    const { email, password } = parsed.data;
     const data = await authService.signIn(email, password);
     res.status(200).json(data);
   } catch (error: any) {
@@ -36,13 +68,14 @@ export async function signIn(req: Request, res: Response) {
 
 export const resetPasswordDirect = async (req: Request, res: Response) => {
   try {
-    const { email, newPassword } = req.body;
-
-    if (!email || !newPassword) {
-      return res
-        .status(400)
-        .json({ message: "Email and new password required" });
+    const parsed = resetPasswordDirectSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Invalid request",
+        errors: parsed.error.flatten().fieldErrors,
+      });
     }
+    const { email, newPassword } = parsed.data;
 
     const userRepository = AppDataSource.getRepository(User);
     const user = await userRepository.findOne({ where: { email } });
