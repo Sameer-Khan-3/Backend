@@ -1,60 +1,43 @@
-import {
-  Entity,
-  Column,
-  ManyToMany,
-  ManyToOne,
-  JoinTable,
-  JoinColumn,
-} from "typeorm";
-import { Role } from "./Role";
-import { Department } from "./Department";
+import { Entity, Column, ManyToOne, JoinColumn } from "typeorm";
 import { BaseEntity } from "./base.entity";
+import { Department } from "./Department";
+import { Role } from "./role";
 
 @Entity("users")
 export class User extends BaseEntity {
-
-  @Column()
+  @Column({ unique: true })
   username: string;
 
-  @Column({ unique: true, length: 150 })
+  @Column({ unique: true })
   email: string;
 
-  @Column({ length: 255 })
+  @Column()
   password: string;
 
   @Column({ default: true })
   isActive: boolean;
 
-  @Column({ nullable: true })
-  resetToken: string;
+  @Column({ default: false })
+  mustChangePassword: boolean;
 
-  @Column({ type: "timestamptz", nullable: true })
-  resetTokenExpiry: Date;
+  @Column({ type: "varchar", nullable: true })
+  resetToken: string | null;
 
-  /**
-   * User - Department
-   */
-  @ManyToOne(() => Department, (department) => department.users, {
+  @Column({ type: "timestamp", nullable: true })
+  resetTokenExpiry?: Date;
+
+  @ManyToOne(() => Department, (department) => department.employees, {
     nullable: true,
-    onDelete: "SET NULL",
   })
-  @JoinColumn({ name: "department_id" })
-  department: Department;
+  department: Department | null;
 
-  /**
-   * User - Role
-   */
-  @ManyToMany(() => Role, (role) => role.users)
-  @JoinTable({
-    name: "user_roles",
-    joinColumn: {
-      name: "user_id",
-      referencedColumnName: "id",
-    },
-    inverseJoinColumn: {
-      name: "role_id",
-      referencedColumnName: "id",
-    },
-  })
-  roles: Role[];
+  @Column({ nullable: true })
+  departmentId: string | null;
+
+  @ManyToOne(() => Role, (role) => role.users, { nullable: true })
+  @JoinColumn({ name: "roleId" })
+  role: Role | null;
+
+  @Column({ nullable: true })
+  roleId: string | null;
 }

@@ -3,23 +3,24 @@ import { User } from "../entities/User";
 import { Role } from "../entities/Role";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { IAuthService } from "../interfaces/IAuthService";
 
 const userRepo = AppDataSource.getRepository(User);
 const roleRepo = AppDataSource.getRepository(Role);
 
-export class AuthService {
-
-  // ================= SIGN UP =================
-  async signUp(email: string, password: string, role: string, username: string) {
-
+export class AuthService implements IAuthService {
+  async signUp(
+    email: string,
+    password: string,
+    _role: string,
+    username: string
+  ) {
     const existing = await userRepo.findOne({ where: { email } });
     if (existing) throw new Error("User already exists");
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Default role
     const defaultRole = await roleRepo.findOne({
-      where: { name: "Employee" }
+      where: { name: "Employee" },
     });
 
     if (!defaultRole) {
@@ -29,29 +30,26 @@ export class AuthService {
     const user = userRepo.create({
       email,
       password: hashedPassword,
-      roles: [defaultRole],
-      username: username
+      role: defaultRole,
+      username,
     });
 
     await userRepo.save(user);
-
     const token = this.generateToken(user);
 
     return {
       user: {
         id: user.id,
-        email: user.email
+        email: user.email,
       },
-      token
+      token,
     };
   }
 
-  // ================= SIGN IN =================
   async signIn(email: string, password: string) {
-
     const user = await userRepo.findOne({
       where: { email },
-      relations: ["roles"]
+      relations: ["role"],
     });
 
     if (!user) throw new Error("Invalid credentials");
@@ -59,25 +57,28 @@ export class AuthService {
     const match = await bcrypt.compare(password, user.password);
     if (!match) throw new Error("Invalid credentials");
 
+    if (user.mustChangePassword) {
+      throw new Error("PASSWORD_CHANGE_REQUIRED");
+    }
+
     const token = this.generateToken(user);
 
     return {
       user: {
         id: user.id,
         email: user.email,
-        roles: user.roles.map(r => r.name)
+        role: user.role?.name ?? null,
       },
-      token
+      token,
     };
   }
 
-  // ================= JWT =================
   private generateToken(user: User) {
-
     return jwt.sign(
       {
         id: user.id,
-        roles: user.roles?.map(r => r.name) || []
+        role: user.role?.name?.toUpperCase() || null,
+        roles: user.role?.name ? [user.role.name.toUpperCase()] : [],
       },
       process.env.JWT_SECRET as string,
       { expiresIn: "1d" }
