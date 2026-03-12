@@ -1,6 +1,6 @@
 import { AppDataSource } from "../config/data-source";
-import { Role } from "../entities/Role";
-import { Permission } from "../entities/Permission";
+import { Role } from "../entities/role";
+import { Permission } from "../entities/permission";
 
 export const seedRBAC = async () => {
   const roleRepo = AppDataSource.getRepository(Role);
