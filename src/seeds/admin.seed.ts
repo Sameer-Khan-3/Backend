@@ -1,6 +1,6 @@
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
-import { Role } from "../entities/Role";
+import { Role } from "../entities/role";
 import * as bcrypt from "bcrypt";
 
 export const seedAdmin = async () => {

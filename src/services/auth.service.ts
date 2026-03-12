@@ -1,14 +1,13 @@
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
-import { Role } from "../entities/Role";
+import { Role } from "../entities/role";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { IAuthService } from "../interfaces/IAuthService";
 
 const userRepo = AppDataSource.getRepository(User);
 const roleRepo = AppDataSource.getRepository(Role);
 
-export class AuthService implements IAuthService {
+export class AuthService {
   async signUp(
     email: string,
     password: string,

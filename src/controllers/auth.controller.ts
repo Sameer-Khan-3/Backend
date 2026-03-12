@@ -7,22 +7,40 @@ import { User } from "../entities/User";
 
 const authService = new AuthService();
 
-const signUpSchema = z.object({
-  email: z.string().email("Invalid email format"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  role: z.string().optional(),
-  username: z.string().trim().min(1, "Username is required"),
-});
+const signUpSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email("Invalid email format"),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+    role: z.string().trim().optional().default(""),
+    username: z.string().trim().min(1, "Username is required"),
+  })
+  .strict();
 
-const signInSchema = z.object({
-  email: z.string().email("Invalid email format"),
-  password: z.string().min(1, "Password is required"),
-});
+const signInSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email("Invalid email format"),
+    password: z.string().min(1, "Password is required"),
+  })
+  .strict();
 
-const resetPasswordDirectSchema = z.object({
-  email: z.string().email("Invalid email format"),
-  newPassword: z.string().min(6, "Password must be at least 6 characters"),
-});
+const resetPasswordDirectSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email("Invalid email format"),
+    newPassword: z.string().min(6, "Password must be at least 6 characters"),
+  })
+  .strict();
 
 export async function signUp(req: Request, res: Response) {
   try {
