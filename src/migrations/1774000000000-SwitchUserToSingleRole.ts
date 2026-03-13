@@ -11,17 +11,39 @@ export class SwitchUserToSingleRole1774000000000
     );
 
     await queryRunner.query(
-      `UPDATE "users" u
-       SET "roleId" = ur."rolesId"
-       FROM "user_roles" ur
-       WHERE ur."usersId" = u.id AND u."roleId" IS NULL`
+      `DO $$
+       BEGIN
+         IF EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'user_roles' AND column_name = 'usersId'
+         ) AND EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'user_roles' AND column_name = 'rolesId'
+         ) THEN
+           UPDATE "users" u
+           SET "roleId" = ur."rolesId"
+           FROM "user_roles" ur
+           WHERE ur."usersId" = u.id AND u."roleId" IS NULL;
+         END IF;
+       END $$;`
     );
 
     await queryRunner.query(
-      `UPDATE "users" u
-       SET "roleId" = ur."role_id"
-       FROM "user_roles" ur
-       WHERE ur."user_id" = u.id AND u."roleId" IS NULL`
+      `DO $$
+       BEGIN
+         IF EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'user_roles' AND column_name = 'user_id'
+         ) AND EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'user_roles' AND column_name = 'role_id'
+         ) THEN
+           UPDATE "users" u
+           SET "roleId" = ur."role_id"
+           FROM "user_roles" ur
+           WHERE ur."user_id" = u.id AND u."roleId" IS NULL;
+         END IF;
+       END $$;`
     );
 
     await queryRunner.query(
