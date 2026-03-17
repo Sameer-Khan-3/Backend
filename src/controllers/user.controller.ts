@@ -1,11 +1,16 @@
 import { Request, Response } from "express";
 import { z } from "zod";
+import crypto from "crypto";
 import { UserService } from "../services/user.service";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
 import { Role } from "../entities/role";
 import { Department } from "../entities/Department";
+import {
+  createCognitoUser,
+  deleteCognitoUser,
+} from "../services/cognito.service";
 
 
 const service = new UserService();
@@ -33,6 +38,9 @@ const resolveRequestRole = (req: AuthRequest): string | null => {
 };
 
 export async function createUser(req: Request, res: Response) {
+  let cognitoUserCreated = false;
+  let emailForRollback: string | null = null;
+
   try {
     const parsed = createUserSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -41,12 +49,46 @@ export async function createUser(req: Request, res: Response) {
         errors: parsed.error.flatten().fieldErrors,
       });
     }
-    const { username, email, password } = parsed.data;
-    // If valid -> create user
-    const user = await service.create({ username, email, password });
+    const { username, email } = parsed.data;
 
-    res.status(201).json(user);
+    const userRepo = AppDataSource.getRepository(User);
+    const existing = await userRepo.findOne({
+      where: [{ email }, { username }],
+    });
+
+    if (existing) {
+      return res.status(409).json({ message: "User already exists" });
+    }
+
+    const temporaryPassword = `Tmp#${crypto.randomBytes(12).toString("base64").replace(/[^a-zA-Z0-9]/g, "A").slice(0, 12)}9`;
+
+    await createCognitoUser(email, "Employee", {
+      formattedName: username,
+      temporaryPassword,
+    });
+    cognitoUserCreated = true;
+    emailForRollback = email;
+
+    const user = await service.create({
+      username,
+      email,
+      password: temporaryPassword,
+      mustChangePassword: true,
+    });
+
+    res.status(201).json({
+      ...user,
+      mustChangePassword: true,
+    });
   } catch (error: any) {
+    if (cognitoUserCreated && emailForRollback) {
+      try {
+        await deleteCognitoUser(emailForRollback);
+      } catch (rollbackError) {
+        console.error("Cognito rollback failed:", rollbackError);
+      }
+    }
+
     res.status(500).json({
       message: "Failed to create user",
       error: error.message,
@@ -72,6 +114,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    await deleteCognitoUser(user.email);
     await userRepo.remove(user);
 
     return res.status(200).json({ message: "User deleted successfully" });

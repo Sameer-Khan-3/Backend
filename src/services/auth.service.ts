@@ -11,35 +11,45 @@ export class AuthService {
   async signUp(
     email: string,
     password: string,
-    _role: string,
-    username: string
+    username: string,
+    roleName = "Employee"
   ) {
-    const existing = await userRepo.findOne({ where: { email } });
-    if (existing) throw new Error("User already exists");
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const defaultRole = await roleRepo.findOne({
-      where: { name: "Employee" },
+    const existing = await userRepo.findOne({
+      where: [{ email }, { username }],
     });
 
-    if (!defaultRole) {
+    if (existing) {
+      throw new Error("User already exists");
+    }
+
+    const role = await roleRepo.findOne({
+      where: { name: roleName },
+    });
+
+    if (!role) {
       throw new Error("Default role not found. Seed roles first.");
     }
 
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const user = userRepo.create({
       email,
-      password: hashedPassword,
-      role: defaultRole,
       username,
+      password: hashedPassword,
+      role,
+      mustChangePassword: false,
     });
 
     await userRepo.save(user);
+
     const token = this.generateToken(user);
 
     return {
       user: {
         id: user.id,
         email: user.email,
+        username: user.username,
+        role: user.role?.name ?? null,
       },
       token,
     };
