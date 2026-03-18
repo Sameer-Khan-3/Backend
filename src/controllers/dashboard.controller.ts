@@ -5,27 +5,16 @@ import { DashboardService } from "../services/dashboard.service";
 const dashboardService = new DashboardService();
 
 const resolveRequestRole = (req: AuthRequest): string | null => {
-  if (typeof req.user?.role === "string") {
-    return req.user.role;
-  }
-
-  if (Array.isArray(req.user?.["cognito:groups"])) {
-    return req.user["cognito:groups"][0];
-  }
-  return null;
+  return req.user?.role || req.user?.["cognito:groups"]?.[0] || null;
 };
 
 export async function getDashboardMetrics(req: AuthRequest, res: Response) {
   try {
     const role = resolveRequestRole(req);
-    const userId = typeof req.user?.id === "string" ? req.user.id : undefined;
+    const userId = req.user?.id || undefined;
     const userEmail = req.user?.email || null;
     const userName =
-      typeof req.user?.username === "string"
-        ? req.user.username
-        : typeof req.user?.["cognito:username"] === "string"
-        ? req.user["cognito:username"]
-        : undefined;
+      req.user?.username || req.user?.["cognito:username"] || undefined;
 
     if (!role || !userId) {
       return res.status(403).json({ message: "Forbidden" });

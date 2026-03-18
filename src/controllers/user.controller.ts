@@ -29,14 +29,7 @@ const idParamSchema = z.object({
 });
 
 const resolveRequestRole = (req: AuthRequest): string | null => {
-  if (typeof req.user?.role === "string") {
-    return req.user.role;
-  }
-
-  if (Array.isArray(req.user?.["cognito:groups"])) {
-    return req.user["cognito:groups"][0];
-  }
-  return null;
+  return req.user?.role || req.user?.["cognito:groups"]?.[0] || null;
 };
 
 export async function createUser(req: Request, res: Response) {
