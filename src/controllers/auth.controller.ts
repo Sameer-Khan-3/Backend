@@ -1,114 +1,82 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import bcrypt from "bcryptjs";
-import { AuthService } from "../services/auth.service";
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
+import { UserService } from "../services/user.service";
+import {
+  deleteCognitoUser,
+  getCognitoUserIdentity,
+} from "../services/cognito.service";
 
-const authService = new AuthService();
+const userService = new UserService();
 
 const signUpSchema = z
   .object({
-    email: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .email("Invalid email format"),
-    password: z.string().min(6, "Password must be at least 6 characters"),
-    role: z.string().trim().optional().default(""),
+    email: z.string().trim().toLowerCase().email("Invalid email format"),
     username: z.string().trim().min(1, "Username is required"),
-  })
-  .strict();
-
-const signInSchema = z
-  .object({
-    email: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .email("Invalid email format"),
-    password: z.string().min(1, "Password is required"),
-  })
-  .strict();
-
-const resetPasswordDirectSchema = z
-  .object({
-    email: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .email("Invalid email format"),
-    newPassword: z.string().min(6, "Password must be at least 6 characters"),
+    gender: z.string().trim().min(1, "Gender is required").optional(),
+    formattedName: z.string().trim().min(1).optional(),
   })
   .strict();
 
 export async function signUp(req: Request, res: Response) {
   try {
     const parsed = signUpSchema.safeParse(req.body);
+
     if (!parsed.success) {
       return res.status(400).json({
         message: "Invalid request",
         errors: parsed.error.flatten().fieldErrors,
       });
     }
-    const { email, password, role, username } = parsed.data;
 
-    const data = await authService.signUp(email, password, role, username);
-    res.status(201).json(data);
+    const { email, username } = parsed.data;
+    const userRepo = AppDataSource.getRepository(User);
+
+    const existingUser = await userRepo.findOne({
+      where: { email },
+      relations: ["role", "department"],
+    });
+
+    if (existingUser) {
+      return res.status(200).json({
+        message: "Signup profile already exists",
+        user: existingUser,
+      });
+    }
+
+    const cognitoUser = await getCognitoUserIdentity(email);
+    if (!cognitoUser.cognitoUsername) {
+      return res.status(400).json({
+        message: "Cognito user lookup failed",
+      });
+    }
+
+    if (cognitoUser.status !== "CONFIRMED") {
+      return res.status(400).json({
+        message: "Verify your email before creating the profile",
+      });
+    }
+
+    try {
+      const user = await userService.create({
+        email,
+        username,
+        cognitoUsername: cognitoUser.cognitoUsername,
+        cognitoSub: cognitoUser.cognitoSub,
+      });
+
+      return res.status(201).json({
+        message: "Signup successful",
+        user,
+      });
+    } catch (error) {
+      await deleteCognitoUser(cognitoUser.cognitoUsername).catch(() => undefined);
+      throw error;
+    }
   } catch (error: any) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({
+      message: error?.message || "Signup failed",
+    });
   }
 }
-
-export async function signIn(req: Request, res: Response) {
-  try {
-    const parsed = signInSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        message: "Invalid request",
-        errors: parsed.error.flatten().fieldErrors,
-      });
-    }
-    const { email, password } = parsed.data;
-    const data = await authService.signIn(email, password);
-    res.status(200).json(data);
-  } catch (error: any) {
-    if (error.message === "PASSWORD_CHANGE_REQUIRED") {
-      return res.status(403).json({
-        message: "Password change required",
-        mustChangePassword: true,
-      });
-    }
-
-    return res.status(401).json({ message: error.message });
-  }
-}
-
-export const resetPasswordDirect = async (req: Request, res: Response) => {
-  try {
-    const parsed = resetPasswordDirectSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        message: "Invalid request",
-        errors: parsed.error.flatten().fieldErrors,
-      });
-    }
-    const { email, newPassword } = parsed.data;
-
-    const userRepository = AppDataSource.getRepository(User);
-    const user = await userRepository.findOne({ where: { email } });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    user.password = await bcrypt.hash(newPassword, 10);
-    user.mustChangePassword = false;
-
-    await userRepository.save(user);
-    return res.status(200).json({ message: "Password updated successfully" });
-  } catch (error: any) {
-    console.error("Direct Reset Password Error:", error);
-    return res.status(500).json({ message: error.message || "Server error" });
-  }
-};

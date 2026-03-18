@@ -1,4 +1,12 @@
 import request from "supertest";
+
+jest.mock("jwks-rsa", () => ({
+  __esModule: true,
+  default: jest.fn(() => ({
+    getSigningKey: jest.fn(),
+  })),
+}));
+
 import app from "../app";
 
 describe("Protected Routes", () => {
