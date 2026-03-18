@@ -10,7 +10,7 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 
 const client = new CognitoIdentityProviderClient({
-  region: process.env.COGNITO_REGION || process.env.AWS_REGION,
+  region: process.env.REGION,
 });
 
 const getUserPoolId = () => {
@@ -19,6 +19,13 @@ const getUserPoolId = () => {
     throw new Error("COGNITO_USER_POOL_ID is not configured");
   }
   return userPoolId;
+};
+
+const readAttribute = (
+  attributes: Array<{ Name?: string; Value?: string }> | undefined,
+  name: string
+) => {
+  return attributes?.find((attribute) => attribute.Name === name)?.Value ?? null;
 };
 
 export async function createCognitoUser(
@@ -78,12 +85,24 @@ export async function getCognitoUser(email: string) {
   );
 }
 
-export async function setCognitoUserRole(email: string, role: string) {
+export async function getCognitoUserIdentity(email: string) {
+  const user = await getCognitoUser(email);
+  const attributes = user.UserAttributes ?? [];
+
+  return {
+    cognitoUsername: user.Username ?? email,
+    cognitoSub: readAttribute(attributes, "sub"),
+    email: readAttribute(attributes, "email") ?? email,
+    status: user.UserStatus ?? null,
+  };
+}
+
+export async function setCognitoUserRole(cognitoUsername: string, role: string) {
   const userPoolId = getUserPoolId();
   const list = await client.send(
     new AdminListGroupsForUserCommand({
       UserPoolId: userPoolId,
-      Username: email,
+      Username: cognitoUsername,
     })
   );
 
@@ -97,7 +116,7 @@ export async function setCognitoUserRole(email: string, role: string) {
       await client.send(
         new AdminRemoveUserFromGroupCommand({
           UserPoolId: userPoolId,
-          Username: email,
+          Username: cognitoUsername,
           GroupName: groupName,
         })
       );
@@ -108,19 +127,19 @@ export async function setCognitoUserRole(email: string, role: string) {
     await client.send(
       new AdminAddUserToGroupCommand({
         UserPoolId: userPoolId,
-        Username: email,
+        Username: cognitoUsername,
         GroupName: role,
       })
     );
   }
 }
 
-export async function deleteCognitoUser(email: string) {
+export async function deleteCognitoUser(cognitoUsername: string) {
   const userPoolId = getUserPoolId();
   await client.send(
     new AdminDeleteUserCommand({
       UserPoolId: userPoolId,
-      Username: email,
+      Username: cognitoUsername,
     })
   );
 }

@@ -5,7 +5,7 @@ import { User } from "../entities/User";
 import { UserService } from "../services/user.service";
 import {
   deleteCognitoUser,
-  getCognitoUser,
+  getCognitoUserIdentity,
 } from "../services/cognito.service";
 
 const userService = new UserService();
@@ -14,19 +14,16 @@ const signUpSchema = z
   .object({
     email: z.string().trim().toLowerCase().email("Invalid email format"),
     username: z.string().trim().min(1, "Username is required"),
-    gender: z.string().trim().min(1, "Gender is required"),
+    gender: z.string().trim().min(1, "Gender is required").optional(),
     formattedName: z.string().trim().min(1).optional(),
   })
   .strict();
 
 export async function signUp(req: Request, res: Response) {
   try {
-    console.log("Signup request received:", req.body);
-
     const parsed = signUpSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      console.log("Validation failed:", parsed.error.flatten().fieldErrors);
       return res.status(400).json({
         message: "Invalid request",
         errors: parsed.error.flatten().fieldErrors,
@@ -48,8 +45,14 @@ export async function signUp(req: Request, res: Response) {
       });
     }
 
-    const cognitoUser = await getCognitoUser(email);
-    if (cognitoUser.UserStatus !== "CONFIRMED") {
+    const cognitoUser = await getCognitoUserIdentity(email);
+    if (!cognitoUser.cognitoUsername) {
+      return res.status(400).json({
+        message: "Cognito user lookup failed",
+      });
+    }
+
+    if (cognitoUser.status !== "CONFIRMED") {
       return res.status(400).json({
         message: "Verify your email before creating the profile",
       });
@@ -59,6 +62,8 @@ export async function signUp(req: Request, res: Response) {
       const user = await userService.create({
         email,
         username,
+        cognitoUsername: cognitoUser.cognitoUsername,
+        cognitoSub: cognitoUser.cognitoSub,
       });
 
       return res.status(201).json({
@@ -66,7 +71,7 @@ export async function signUp(req: Request, res: Response) {
         user,
       });
     } catch (error) {
-      await deleteCognitoUser(email).catch(() => undefined);
+      await deleteCognitoUser(cognitoUser.cognitoUsername).catch(() => undefined);
       throw error;
     }
   } catch (error: any) {
