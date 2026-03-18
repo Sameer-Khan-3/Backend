@@ -32,9 +32,6 @@ const resolveRequestRole = (req: AuthRequest): string | null => {
   if (typeof req.user?.role === "string") {
     return req.user.role;
   }
-  if (Array.isArray(req.user?.roles) && req.user.roles.length > 0) {
-    return req.user.roles[0];
-  }
 
   if (Array.isArray(req.user?.["cognito:groups"])) {
     return req.user["cognito:groups"][0];
