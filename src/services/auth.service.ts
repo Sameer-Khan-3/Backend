@@ -77,7 +77,6 @@ export class AuthService {
       {
         id: user.id,
         role: user.role?.name?.toUpperCase() || null,
-        roles: user.role?.name ? [user.role.name.toUpperCase()] : [],
       },
       process.env.JWT_SECRET as string,
       { expiresIn: "1d" }

@@ -29,13 +29,7 @@ const idParamSchema = z.object({
 });
 
 const resolveRequestRole = (req: AuthRequest): string | null => {
-  if (typeof req.user?.role === "string") {
-    return req.user.role;
-  }
-  if (Array.isArray(req.user?.roles) && req.user.roles.length > 0) {
-    return req.user.roles[0];
-  }
-  return null;
+  return req.user?.role || req.user?.["cognito:groups"]?.[0] || null;
 };
 
 export async function createUser(req: Request, res: Response) {
@@ -150,12 +144,18 @@ export const getUsersByDepartment = async (req: AuthRequest, res: Response) => {
   try {
     const userRepo = AppDataSource.getRepository(User);
     const currentUserId = req.user?.id;
-    if (!currentUserId) {
+    const currentUserEmail = req.user?.email || null;
+    const currentUserName =
+      req.user?.username || req.user?.["cognito:username"] || null;
+    if (!currentUserId && !currentUserEmail && !currentUserName) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
     const currentUser = await userRepo.findOne({
-      where: { id: currentUserId },
+      where: [
+        currentUserId ? { id: currentUserId } : undefined,
+        currentUserEmail ? { email: currentUserEmail } : undefined,
+      ].filter(Boolean) as Array<{ id?: string; email?: string }>,
       relations: ["department"],
     });
 
