@@ -6,7 +6,9 @@ import { UserService } from "../services/user.service";
 import {
   deleteCognitoUser,
   getCognitoUserIdentity,
+  setCognitoUserRole,
 } from "../services/cognito.service";
+import { Roles } from "../utils/roles.enum";
 
 const userService = new UserService();
 
@@ -33,18 +35,6 @@ export async function signUp(req: Request, res: Response) {
     const { email, username } = parsed.data;
     const userRepo = AppDataSource.getRepository(User);
 
-    const existingUser = await userRepo.findOne({
-      where: { email },
-      relations: ["role", "department"],
-    });
-
-    if (existingUser) {
-      return res.status(200).json({
-        message: "Signup profile already exists",
-        user: existingUser,
-      });
-    }
-
     const cognitoUser = await getCognitoUserIdentity(email);
     if (!cognitoUser.cognitoUsername) {
       return res.status(400).json({
@@ -55,6 +45,23 @@ export async function signUp(req: Request, res: Response) {
     if (cognitoUser.status !== "CONFIRMED") {
       return res.status(400).json({
         message: "Verify your email before creating the profile",
+      });
+    }
+
+    const existingUser = await userRepo.findOne({
+      where: { email },
+      relations: ["role", "department"],
+    });
+
+    await setCognitoUserRole(
+      cognitoUser.cognitoUsername,
+      existingUser?.role?.name || Roles.Employee
+    );
+
+    if (existingUser) {
+      return res.status(200).json({
+        message: "Signup profile already exists",
+        user: existingUser,
       });
     }
 
