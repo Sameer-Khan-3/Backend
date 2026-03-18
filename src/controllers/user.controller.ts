@@ -1,19 +1,26 @@
 import { Request, Response } from "express";
 import { z } from "zod";
+import crypto from "crypto";
 import { UserService } from "../services/user.service";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
 import { Role } from "../entities/role";
 import { Department } from "../entities/Department";
-
+import {
+  createCognitoUser,
+  deleteCognitoUser,
+  getCognitoUserIdentity,
+  setCognitoUserRole,
+} from "../services/cognito.service";
+import { Roles } from "../utils/roles.enum";
+import { normalizeRole, resolveRequestRole } from "../utils/role.utils";
 
 const service = new UserService();
 
 const createUserSchema = z.object({
   username: z.string().trim().min(1, "Username is required"),
   email: z.string().email("Invalid email format"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
 const updateUserSchema = z.object({
@@ -28,8 +35,35 @@ const idParamSchema = z.object({
   id: z.string().min(1, "Invalid id"),
 });
 
-const resolveRequestRole = (req: AuthRequest): string | null => {
-  return req.user?.role || req.user?.["cognito:groups"]?.[0] || null;
+const isCognitoUserMissingError = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.name === "UserNotFoundException" ||
+    error.message.toLowerCase().includes("usernotfoundexception")
+  );
+};
+
+const resolveCurrentUser = async (req: AuthRequest) => {
+  const userRepo = AppDataSource.getRepository(User);
+  const currentUserSub = req.user?.sub;
+  const currentUserId = req.user?.id;
+  const currentUserEmail = req.user?.email || null;
+
+  if (!currentUserSub && !currentUserId && !currentUserEmail) {
+    return null;
+  }
+
+  return userRepo.findOne({
+    where: [
+      currentUserSub ? { cognitoSub: currentUserSub } : undefined,
+      currentUserEmail ? { email: currentUserEmail } : undefined,
+      currentUserId ? { id: currentUserId } : undefined,
+    ].filter(Boolean) as Array<{ cognitoSub?: string; id?: string; email?: string }>,
+    relations: ["role", "department"],
+  });
 };
 
 export async function createUser(req: Request, res: Response) {
@@ -41,11 +75,28 @@ export async function createUser(req: Request, res: Response) {
         errors: parsed.error.flatten().fieldErrors,
       });
     }
-    const { username, email, password } = parsed.data;
-    // If valid -> create user
-    const user = await service.create({ username, email, password });
+    const { username, email } = parsed.data;
+    await createCognitoUser(email, "Employee", {
+      formattedName: username,
+    });
+    const cognitoUser = await getCognitoUserIdentity(email);
 
-    res.status(201).json(user);
+    let user: User;
+    try {
+      user = await service.create({
+        username,
+        email,
+        cognitoUsername: cognitoUser.cognitoUsername,
+        cognitoSub: cognitoUser.cognitoSub,
+      });
+    } catch (error) {
+      await deleteCognitoUser(cognitoUser.cognitoUsername).catch(() => undefined);
+      throw error;
+    }
+
+    res.status(201).json({
+      ...user,
+    });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to create user",
@@ -57,6 +108,7 @@ export async function createUser(req: Request, res: Response) {
 export const deleteUser = async (req: Request, res: Response) => {
   try {
     const userRepo = AppDataSource.getRepository(User);
+    const departmentRepo = AppDataSource.getRepository(Department);
     const parsed = idParamSchema.safeParse(req.params);
     if (!parsed.success) {
       return res.status(400).json({
@@ -72,12 +124,35 @@ export const deleteUser = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    await userRepo.remove(user);
+    const managedDepartments = await departmentRepo.find({
+      where: { manager: { id: user.id } },
+      relations: ["manager"],
+    });
+
+    try {
+      await deleteCognitoUser(user.cognitoUsername || user.email);
+    } catch (error) {
+      if (!isCognitoUserMissingError(error)) {
+        throw error;
+      }
+    }
+
+    await AppDataSource.transaction(async (transactionManager) => {
+      if (managedDepartments.length > 0) {
+        for (const department of managedDepartments) {
+          department.manager = null as any;
+          await transactionManager.save(Department, department);
+        }
+      }
+
+      await transactionManager.remove(User, user);
+    });
 
     return res.status(200).json({ message: "User deleted successfully" });
   } catch (error) {
-    console.error("Delete user error:", error);
-    res.status(500).json({ message: "Server error" });
+    const message =
+      error instanceof Error ? error.message : "Failed to delete user";
+    res.status(500).json({ message });
   }
 };
 
@@ -92,6 +167,7 @@ export async function getUsers(req: AuthRequest, res: Response) {
 
     const userRepo = AppDataSource.getRepository(User);
     const requesterId = req.user?.id ?? null;
+    const requesterEmail = req.user?.email ?? null;
 
     const rawSearch =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
@@ -109,7 +185,9 @@ export async function getUsers(req: AuthRequest, res: Response) {
       .leftJoinAndSelect("user.role", "role")
       .leftJoinAndSelect("user.department", "department");
 
-    if (requesterId) {
+    if (requesterEmail) {
+      query.andWhere("user.email != :requesterEmail", { requesterEmail });
+    } else if (requesterId) {
       query.andWhere("user.id != :requesterId", { requesterId });
     }
 
@@ -140,24 +218,27 @@ export async function getUsers(req: AuthRequest, res: Response) {
   }
 }
 
+export async function getCurrentUser(req: AuthRequest, res: Response) {
+  try {
+    const currentUser = await resolveCurrentUser(req);
+
+    if (!currentUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(currentUser);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || "Failed to fetch user" });
+  }
+}
+
 export const getUsersByDepartment = async (req: AuthRequest, res: Response) => {
   try {
     const userRepo = AppDataSource.getRepository(User);
-    const currentUserId = req.user?.id;
-    const currentUserEmail = req.user?.email || null;
-    const currentUserName =
-      req.user?.username || req.user?.["cognito:username"] || null;
-    if (!currentUserId && !currentUserEmail && !currentUserName) {
+    const currentUser = await resolveCurrentUser(req);
+    if (!currentUser) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-
-    const currentUser = await userRepo.findOne({
-      where: [
-        currentUserId ? { id: currentUserId } : undefined,
-        currentUserEmail ? { email: currentUserEmail } : undefined,
-      ].filter(Boolean) as Array<{ id?: string; email?: string }>,
-      relations: ["department"],
-    });
 
     if (!currentUser?.department?.id) {
       return res.status(400).json({ message: "User is not assigned to any department" });
@@ -225,14 +306,19 @@ export async function getUser(req: AuthRequest, res: Response) {
 
     const role = resolveRequestRole(req);
     const isAdmin = role?.toLowerCase() === "admin";
+    const user = await service.findOne(requestedUserId);
 
-    const isSelf = req.user?.id === requestedUserId;
+    const requesterSub = req.user?.sub;
+    const requesterEmail = req.user?.email || null;
+    const isSelf =
+      (requesterSub && user.cognitoSub === requesterSub) ||
+      (requesterEmail && user.email === requesterEmail) ||
+      req.user?.id === requestedUserId;
 
     if (!isAdmin && !isSelf) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
-    const user = await service.findOne(requestedUserId);
     res.json(user);
 
   } catch (error: any) {
@@ -272,21 +358,35 @@ export const updateUser = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const previousRoleName = user.role?.name ?? null;
+    let nextCognitoRole: Roles | null = null;
+
     // update fields
     if (typeof username === "string") user.username = username;
-    if (typeof email === "string") user.email = email;
+    if (typeof email === "string" && email !== user.email) {
+      return res.status(400).json({
+        message: "Email updates are not supported for Cognito-managed users",
+      });
+    }
     if (typeof isActive === "boolean") user.isActive = isActive;
 
     // update role
     if (typeof role === "string" && role.trim()) {
-      const normalizedRole = role.trim().toLowerCase();
+      const normalizedRole = normalizeRole(role);
+      if (!normalizedRole) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+
       const roleEntity = await roleRepo
         .createQueryBuilder("role")
-        .where("LOWER(role.name) = :normalizedRole", { normalizedRole })
+        .where("LOWER(role.name) = :normalizedRole", {
+          normalizedRole: normalizedRole.toLowerCase(),
+        })
         .getOne();
 
       if (roleEntity) {
         user.role = roleEntity;
+        nextCognitoRole = normalizedRole;
       }
     }
 
@@ -392,7 +492,28 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     }
 
-    await userRepo.save(user);
+    const shouldSyncCognitoRole =
+      !!nextCognitoRole &&
+      nextCognitoRole !== normalizeRole(previousRoleName);
+
+    if (shouldSyncCognitoRole && nextCognitoRole) {
+      await setCognitoUserRole(
+        user.cognitoUsername || user.email,
+        nextCognitoRole
+      );
+    }
+
+    try {
+      await userRepo.save(user);
+    } catch (error) {
+      if (shouldSyncCognitoRole && previousRoleName) {
+        await setCognitoUserRole(
+          user.cognitoUsername || user.email,
+          previousRoleName
+        ).catch(() => undefined);
+      }
+      throw error;
+    }
 
     const updatedUser = await userRepo.findOne({
       where: { id: user.id },
