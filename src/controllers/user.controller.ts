@@ -153,11 +153,7 @@ export const getUsersByDepartment = async (req: AuthRequest, res: Response) => {
     const currentUserId = req.user?.id;
     const currentUserEmail = req.user?.email || null;
     const currentUserName =
-      typeof req.user?.username === "string"
-        ? req.user.username
-        : typeof req.user?.["cognito:username"] === "string"
-        ? req.user["cognito:username"]
-        : null;
+      req.user?.username || req.user?.["cognito:username"] || null;
     if (!currentUserId && !currentUserEmail && !currentUserName) {
       return res.status(401).json({ message: "Unauthorized" });
     }
