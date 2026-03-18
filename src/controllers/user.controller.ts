@@ -10,15 +10,15 @@ import { Department } from "../entities/Department";
 import {
   createCognitoUser,
   deleteCognitoUser,
+  setCognitoUserRole,
 } from "../services/cognito.service";
-
+import { Roles } from "../utils/roles.enum";
 
 const service = new UserService();
 
 const createUserSchema = z.object({
   username: z.string().trim().min(1, "Username is required"),
   email: z.string().email("Invalid email format"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
 const updateUserSchema = z.object({
@@ -33,8 +33,36 @@ const idParamSchema = z.object({
   id: z.string().min(1, "Invalid id"),
 });
 
-const resolveRequestRole = (req: AuthRequest): string | null => {
-  return req.user?.role || req.user?.["cognito:groups"]?.[0] || null;
+const normalizeRole = (value: unknown): Roles | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  return (
+    Object.values(Roles).find(
+      (role) => role.toLowerCase() === normalizedValue
+    ) || null
+  );
+};
+
+const resolveRequestRole = (req: AuthRequest): Roles => {
+  const directRole = normalizeRole(req.user?.role);
+  if (directRole) {
+    return directRole;
+  }
+
+  const groups = Array.isArray(req.user?.["cognito:groups"])
+    ? req.user["cognito:groups"]
+    : [];
+
+  for (const role of [Roles.Admin, Roles.Manager, Roles.Employee]) {
+    if (groups.some((group) => normalizeRole(group) === role)) {
+      return role;
+    }
+  }
+
+  return Roles.Employee;
 };
 
 export async function createUser(req: Request, res: Response) {
@@ -50,31 +78,20 @@ export async function createUser(req: Request, res: Response) {
       });
     }
     const { username, email } = parsed.data;
-
-    const userRepo = AppDataSource.getRepository(User);
-    const existing = await userRepo.findOne({
-      where: [{ email }, { username }],
-    });
-
-    if (existing) {
-      return res.status(409).json({ message: "User already exists" });
-    }
-
-    const temporaryPassword = `Tmp#${crypto.randomBytes(12).toString("base64").replace(/[^a-zA-Z0-9]/g, "A").slice(0, 12)}9`;
-
     await createCognitoUser(email, "Employee", {
       formattedName: username,
-      temporaryPassword,
     });
-    cognitoUserCreated = true;
-    emailForRollback = email;
 
-    const user = await service.create({
-      username,
-      email,
-      password: temporaryPassword,
-      mustChangePassword: true,
-    });
+    let user: User;
+    try {
+      user = await service.create({
+        username,
+        email,
+      });
+    } catch (error) {
+      await deleteCognitoUser(email).catch(() => undefined);
+      throw error;
+    }
 
     res.status(201).json({
       ...user,
@@ -114,7 +131,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    await deleteCognitoUser(user.email);
+    await deleteCognitoUser(user.email).catch(() => undefined);
     await userRepo.remove(user);
 
     return res.status(200).json({ message: "User deleted successfully" });
@@ -315,6 +332,9 @@ export const updateUser = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const previousRoleName = user.role?.name ?? null;
+    let nextCognitoRole: Roles | null = null;
+
     // update fields
     if (typeof username === "string") user.username = username;
     if (typeof email === "string") user.email = email;
@@ -322,14 +342,21 @@ export const updateUser = async (req: Request, res: Response) => {
 
     // update role
     if (typeof role === "string" && role.trim()) {
-      const normalizedRole = role.trim().toLowerCase();
+      const normalizedRole = normalizeRole(role);
+      if (!normalizedRole) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+
       const roleEntity = await roleRepo
         .createQueryBuilder("role")
-        .where("LOWER(role.name) = :normalizedRole", { normalizedRole })
+        .where("LOWER(role.name) = :normalizedRole", {
+          normalizedRole: normalizedRole.toLowerCase(),
+        })
         .getOne();
 
       if (roleEntity) {
         user.role = roleEntity;
+        nextCognitoRole = normalizedRole;
       }
     }
 
@@ -435,7 +462,22 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     }
 
-    await userRepo.save(user);
+    const shouldSyncCognitoRole =
+      !!nextCognitoRole &&
+      nextCognitoRole !== normalizeRole(previousRoleName);
+
+    if (shouldSyncCognitoRole && nextCognitoRole) {
+      await setCognitoUserRole(user.email, nextCognitoRole);
+    }
+
+    try {
+      await userRepo.save(user);
+    } catch (error) {
+      if (shouldSyncCognitoRole && previousRoleName) {
+        await setCognitoUserRole(user.email, previousRoleName).catch(() => undefined);
+      }
+      throw error;
+    }
 
     const updatedUser = await userRepo.findOne({
       where: { id: user.id },

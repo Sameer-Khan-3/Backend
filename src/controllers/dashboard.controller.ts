@@ -1,11 +1,40 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { DashboardService } from "../services/dashboard.service";
+import { Roles } from "../utils/roles.enum";
 
 const dashboardService = new DashboardService();
 
-const resolveRequestRole = (req: AuthRequest): string | null => {
-  return req.user?.role || req.user?.["cognito:groups"]?.[0] || null;
+const normalizeRole = (value: unknown): Roles | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  return (
+    Object.values(Roles).find(
+      (role) => role.toLowerCase() === normalizedValue
+    ) || null
+  );
+};
+
+const resolveRequestRole = (req: AuthRequest): Roles => {
+  const directRole = normalizeRole(req.user?.role);
+  if (directRole) {
+    return directRole;
+  }
+
+  const groups = Array.isArray(req.user?.["cognito:groups"])
+    ? req.user["cognito:groups"]
+    : [];
+
+  for (const role of [Roles.Admin, Roles.Manager, Roles.Employee]) {
+    if (groups.some((group) => normalizeRole(group) === role)) {
+      return role;
+    }
+  }
+
+  return Roles.Employee;
 };
 
 export async function getDashboardMetrics(req: AuthRequest, res: Response) {
@@ -22,7 +51,7 @@ export async function getDashboardMetrics(req: AuthRequest, res: Response) {
 
     const metrics = await dashboardService.getMetrics(
       role,
-      userId || "",
+      userId,
       userEmail || undefined
     );
     res.status(200).json(metrics);

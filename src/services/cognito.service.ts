@@ -3,13 +3,14 @@ import {
   AdminDeleteUserCommand,
   AdminListGroupsForUserCommand,
   AdminCreateUserCommand,
+  AdminGetUserCommand,
   AdminAddUserToGroupCommand,
   AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
 const client = new CognitoIdentityProviderClient({
-  region: "us-east-1",
+  region: process.env.COGNITO_REGION || process.env.AWS_REGION,
 });
 
 const getUserPoolId = () => {
@@ -23,7 +24,10 @@ const getUserPoolId = () => {
 export async function createCognitoUser(
   email: string,
   role: string,
-  options?: { gender?: string; formattedName?: string }
+  options?: {
+    gender?: string;
+    formattedName?: string;
+  }
 ) {
   const userPoolId = getUserPoolId();
 
@@ -38,7 +42,6 @@ export async function createCognitoUser(
         { Name: "gender", Value: options?.gender || "unspecified" },
         { Name: "name", Value: options?.formattedName || email },
       ],
-      TemporaryPassword: "Temp@1234",
       MessageAction: "SUPPRESS",
     })
   );
@@ -61,6 +64,16 @@ export async function setCognitoUserPassword(email: string, password: string) {
       Username: email,
       Password: password,
       Permanent: true,
+    })
+  );
+}
+
+export async function getCognitoUser(email: string) {
+  const userPoolId = getUserPoolId();
+  return client.send(
+    new AdminGetUserCommand({
+      UserPoolId: userPoolId,
+      Username: email,
     })
   );
 }

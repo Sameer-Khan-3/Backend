@@ -6,9 +6,14 @@ export interface AuthRequest extends Request {
   user?: any;
 }
 
+const jwksUri = process.env.COGNITO_PUBLIC_KEY;
+
+if (!jwksUri) {
+  throw new Error("COGNITO_PUBLIC_KEY is not configured");
+}
+
 const client = jwksClient({
-  jwksUri:
-    "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_flAhaS7cD/.well-known/jwks.json",
+  jwksUri,
 });
 
 function getKey(header: any, callback: any) {
@@ -37,7 +42,6 @@ export function authenticate(
     }
 
     req.user = decoded;
-    console.log("decoded user " + decoded);
     next();
   });
 }
