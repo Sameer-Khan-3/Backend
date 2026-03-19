@@ -1,29 +1,32 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { DashboardService } from "../services/dashboard.service";
+import { Roles } from "../utils/roles.enum";
+import { resolveRequestRole } from "../utils/role.utils";
 
 const dashboardService = new DashboardService();
-
-const resolveRequestRole = (req: AuthRequest): string | null => {
-  return req.user?.role || req.user?.["cognito:groups"]?.[0] || null;
-};
 
 export async function getDashboardMetrics(req: AuthRequest, res: Response) {
   try {
     const role = resolveRequestRole(req);
+    const cognitoSub = req.user?.sub || undefined;
     const userId = req.user?.id || undefined;
     const userEmail = req.user?.email || null;
-    const userName =
-      req.user?.username || req.user?.["cognito:username"] || undefined;
+    const isAdmin = role === Roles.Admin;
 
-    if (!role || !userId) {
+    if (!role) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    if (!isAdmin && !cognitoSub && !userEmail && !userId) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
     const metrics = await dashboardService.getMetrics(
       role,
-      userId || "",
-      userEmail || undefined
+      userEmail || undefined,
+      cognitoSub,
+      userId
     );
     res.status(200).json(metrics);
   } catch (error: any) {

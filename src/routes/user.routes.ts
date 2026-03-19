@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   getUsers,
+  getCurrentUser,
   getUser,
   updateUser,
   deleteUser,
@@ -14,6 +15,7 @@ const router = Router();
 
 router.post("/", authenticate, authorizeRoles("Admin", "Manager"), createUser);
 router.get("/", authenticate, authorizeRoles("Admin"), getUsers);
+router.get("/me", authenticate, authorizeRoles("Admin", "Employee", "Manager"), getCurrentUser);
 router.get("/department", authenticate, authorizeRoles("Admin", "Employee", "Manager"), getUsersByDepartment);
 router.get("/:id", authenticate, authorizeRoles("Admin", "Manager", "Employee"), getUser);
 router.put("/:id", authenticate, authorizeRoles("Admin", "Manager"), updateUser);

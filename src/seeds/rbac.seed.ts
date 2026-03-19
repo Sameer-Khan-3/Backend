@@ -6,9 +6,6 @@ export const seedRBAC = async () => {
   const roleRepo = AppDataSource.getRepository(Role);
   const permissionRepo = AppDataSource.getRepository(Permission);
 
-  console.log("🌱 Seeding RBAC...");
-
-  // 1️⃣ Create Permissions
   const permissionsList = [
     "create_user",
     "update_user",
@@ -35,9 +32,7 @@ export const seedRBAC = async () => {
     permissionEntities.push(permission);
   }
 
-  // 2️⃣ Create Roles
   const rolesList = ["Admin", "Manager", "Employee"];
-
   const roleEntities: Record<string, Role> = {};
 
   for (const roleName of rolesList) {
@@ -51,9 +46,7 @@ export const seedRBAC = async () => {
     roleEntities[roleName] = role;
   }
 
-  // 3️⃣ Assign Permissions to Roles
-
-  const adminPermissions = permissionEntities; // All
+  const adminPermissions = permissionEntities;
   const managerPermissions = permissionEntities.filter((p) =>
     ["create_user", "update_user", "view_users"].includes(p.name)
   );
@@ -68,6 +61,4 @@ export const seedRBAC = async () => {
   await roleRepo.save(roleEntities["Admin"]);
   await roleRepo.save(roleEntities["Manager"]);
   await roleRepo.save(roleEntities["Employee"]);
-
-  console.log("RBAC Seed Completed");
 };

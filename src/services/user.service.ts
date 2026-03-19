@@ -1,24 +1,27 @@
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
 import { Role } from "../entities/role";
-import bcrypt from "bcrypt";
 import { Roles } from "../utils/roles.enum";
 
 const userRepo = AppDataSource.getRepository(User);
 const roleRepo = AppDataSource.getRepository(Role);
 
+type CreateUserInput = Partial<User> & {
+  password?: string;
+};
+
+type UpdateUserInput = Partial<User> & {
+  password?: string;
+};
+
 export class UserService {
-  async create(data: Partial<User>) {
+  async create(data: CreateUserInput) {
     const existing = await userRepo.findOne({
       where: [{ email: data.email }, { username: data.username }],
     });
 
     if (existing) {
       throw new Error("User already exists");
-    }
-
-    if (data.password) {
-      data.password = await bcrypt.hash(data.password, 10);
     }
 
     const employeeRole = await roleRepo.findOne({
@@ -29,8 +32,9 @@ export class UserService {
       throw new Error("Default role not found. Seed roles first.");
     }
 
+    const { password: _password, ...persistedData } = data;
     const user = userRepo.create({
-      ...data,
+      ...persistedData,
       role: employeeRole,
     });
 
@@ -56,14 +60,11 @@ export class UserService {
     return user;
   }
 
-  async update(id: string, data: Partial<User>) {
+  async update(id: string, data: UpdateUserInput) {
     const user = await this.findOne(id);
 
-    if (data.password) {
-      data.password = await bcrypt.hash(data.password, 10);
-    }
-
-    userRepo.merge(user, data);
+    const { password: _password, ...persistedData } = data;
+    userRepo.merge(user, persistedData);
     return userRepo.save(user);
   }
 

@@ -11,33 +11,27 @@ export class User extends BaseEntity {
   @Column({ unique: true })
   email: string;
 
-  @Column()
-  password: string;
+  @Column({ type: "varchar", nullable: true, unique: true })
+  cognitoUsername: string | null;
+
+  @Column({ type: "varchar", nullable: true, unique: true })
+  cognitoSub: string | null;
 
   @Column({ default: true })
   isActive: boolean;
-
-  @Column({ default: false })
-  mustChangePassword: boolean;
-
-  @Column({ type: "varchar", nullable: true })
-  resetToken: string | null;
-
-  @Column({ type: "timestamp", nullable: true })
-  resetTokenExpiry?: Date;
 
   @ManyToOne(() => Department, (department) => department.employees, {
     nullable: true,
   })
   department: Department | null;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", nullable: true })
   departmentId: string | null;
 
   @ManyToOne(() => Role, (role) => role.users, { nullable: true })
   @JoinColumn({ name: "roleId" })
   role: Role | null;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", nullable: true })
   roleId: string | null;
 }

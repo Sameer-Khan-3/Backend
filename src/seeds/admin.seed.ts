@@ -1,7 +1,12 @@
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
 import { Role } from "../entities/role";
-import * as bcrypt from "bcrypt";
+import {
+  createCognitoUser,
+  deleteCognitoUser,
+  getCognitoUserIdentity,
+  setCognitoUserPassword,
+} from "../services/cognito.service";
 
 export const seedAdmin = async () => {
   const userRepo = AppDataSource.getRepository(User);
@@ -12,18 +17,14 @@ export const seedAdmin = async () => {
   const adminPassword = process.env.ADMIN_PASSWORD;
 
   if (!adminEmail || !adminUsername || !adminPassword) {
-    console.log("❌ Admin credentials missing in .env");
     return;
   }
-
-  console.log("👑 Seeding Admin...");
 
   const adminRole = await roleRepo.findOne({
     where: { name: "Admin" },
   });
 
   if (!adminRole) {
-    console.log("❌ Admin role not found. Run RBAC seed first.");
     return;
   }
 
@@ -32,23 +33,30 @@ export const seedAdmin = async () => {
   });
 
   if (existingAdmin) {
-    console.log("⚠️ Admin already exists. Skipping...");
     return;
   }
 
-  const hashedPassword = await bcrypt.hash(adminPassword, 10);
-
-  const adminUser = userRepo.create({
-    username: adminUsername,
-    email: adminEmail,
-    password: hashedPassword,
-    isActive: true,
-    mustChangePassword: true, // 🔥 important
-    role: adminRole,
+  await createCognitoUser(adminEmail, adminRole.name, {
+    formattedName: adminUsername,
+    suppressMessage: true,
   });
+  const cognitoUser = await getCognitoUserIdentity(adminEmail);
 
-  await userRepo.save(adminUser);
+  try {
+    await setCognitoUserPassword(adminEmail, adminPassword);
 
-  console.log("✅ Admin created successfully");
-  console.log("⚠️ Must change password on first login");
+    const adminUser = userRepo.create({
+      username: adminUsername,
+      email: adminEmail,
+      cognitoUsername: cognitoUser.cognitoUsername,
+      cognitoSub: cognitoUser.cognitoSub,
+      isActive: true,
+      role: adminRole,
+    });
+
+    await userRepo.save(adminUser);
+  } catch (error) {
+    await deleteCognitoUser(cognitoUser.cognitoUsername).catch(() => undefined);
+    throw error;
+  }
 };
