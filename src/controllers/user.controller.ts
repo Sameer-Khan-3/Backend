@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import crypto from "crypto";
 import { UserService } from "../services/user.service";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { AppDataSource } from "../config/data-source";
@@ -11,6 +10,9 @@ import {
   createCognitoUser,
   deleteCognitoUser,
   getCognitoUserIdentity,
+  listCognitoUsers,
+  setCognitoUserEnabled,
+  updateCognitoUserProfile,
   setCognitoUserRole,
 } from "../services/cognito.service";
 import { Roles } from "../utils/roles.enum";
@@ -35,6 +37,48 @@ const idParamSchema = z.object({
   id: z.string().min(1, "Invalid id"),
 });
 
+const COGNITO_ID_PREFIX = "cognito:";
+
+const extractCognitoUsernameFromId = (id: string) => {
+  if (!id.startsWith(COGNITO_ID_PREFIX)) {
+    return null;
+  }
+
+  const cognitoUsername = id.slice(COGNITO_ID_PREFIX.length).trim();
+  return cognitoUsername || null;
+};
+
+const findUserByIdOrCognitoIdentity = async (
+  id: string,
+  userRepo: ReturnType<typeof AppDataSource.getRepository<User>>
+) => {
+  const cognitoUsernameFromId = extractCognitoUsernameFromId(id);
+
+  if (!cognitoUsernameFromId) {
+    return {
+      user: await userRepo.findOne({
+        where: { id },
+        relations: ["role", "department"],
+      }),
+      cognitoUsernameFromId: null,
+    };
+  }
+
+  const user = await userRepo.findOne({
+    where: [
+      { id },
+      { cognitoUsername: cognitoUsernameFromId },
+      { email: cognitoUsernameFromId },
+    ],
+    relations: ["role", "department"],
+  });
+
+  return {
+    user,
+    cognitoUsernameFromId,
+  };
+};
+
 const isCognitoUserMissingError = (error: unknown) => {
   if (!(error instanceof Error)) {
     return false;
@@ -44,6 +88,14 @@ const isCognitoUserMissingError = (error: unknown) => {
     error.name === "UserNotFoundException" ||
     error.message.toLowerCase().includes("usernotfoundexception")
   );
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return fallback;
 };
 
 const resolveCurrentUser = async (req: AuthRequest) => {
@@ -78,6 +130,7 @@ export async function createUser(req: Request, res: Response) {
     const { username, email } = parsed.data;
     await createCognitoUser(email, "Employee", {
       formattedName: username,
+      suppressMessage: false,
     });
     const cognitoUser = await getCognitoUserIdentity(email);
 
@@ -96,6 +149,8 @@ export async function createUser(req: Request, res: Response) {
 
     res.status(201).json({
       ...user,
+      message:
+        "User created successfully. A temporary password has been sent to the user's email. They can sign in and set a new password.",
     });
   } catch (error: any) {
     res.status(500).json({
@@ -117,36 +172,54 @@ export const deleteUser = async (req: Request, res: Response) => {
       });
     }
     const { id } = parsed.data;
+    const cognitoUsernameFromId = extractCognitoUsernameFromId(id);
 
-    const user = await userRepo.findOne({ where: { id } });
+    const user = await userRepo.findOne({
+      where: cognitoUsernameFromId
+        ? [
+            { id },
+            { cognitoUsername: cognitoUsernameFromId },
+            { email: cognitoUsernameFromId },
+          ]
+        : { id },
+    });
 
-    if (!user) {
+    if (!user && !cognitoUsernameFromId) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const managedDepartments = await departmentRepo.find({
-      where: { manager: { id: user.id } },
-      relations: ["manager"],
-    });
+    const managedDepartments = user
+      ? await departmentRepo.find({
+          where: { manager: { id: user.id } },
+          relations: ["manager"],
+        })
+      : [];
 
-    try {
-      await deleteCognitoUser(user.cognitoUsername || user.email);
-    } catch (error) {
-      if (!isCognitoUserMissingError(error)) {
-        throw error;
+    const cognitoUsernameToDelete =
+      user?.cognitoUsername || user?.email || cognitoUsernameFromId;
+
+    if (cognitoUsernameToDelete) {
+      try {
+        await deleteCognitoUser(cognitoUsernameToDelete);
+      } catch (error) {
+        if (!isCognitoUserMissingError(error)) {
+          throw error;
+        }
       }
     }
 
-    await AppDataSource.transaction(async (transactionManager) => {
-      if (managedDepartments.length > 0) {
-        for (const department of managedDepartments) {
-          department.manager = null as any;
-          await transactionManager.save(Department, department);
+    if (user) {
+      await AppDataSource.transaction(async (transactionManager) => {
+        if (managedDepartments.length > 0) {
+          for (const department of managedDepartments) {
+            department.manager = null as any;
+            await transactionManager.save(Department, department);
+          }
         }
-      }
 
-      await transactionManager.remove(User, user);
-    });
+        await transactionManager.remove(User, user);
+      });
+    }
 
     return res.status(200).json({ message: "User deleted successfully" });
   } catch (error) {
@@ -165,52 +238,126 @@ export async function getUsers(req: AuthRequest, res: Response) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
-    const userRepo = AppDataSource.getRepository(User);
     const requesterId = req.user?.id ?? null;
     const requesterEmail = req.user?.email ?? null;
 
     const rawSearch =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
-    const rawName =
-      typeof req.query.name === "string" ? req.query.name.trim() : "";
-    const rawEmail =
-      typeof req.query.email === "string" ? req.query.email.trim() : "";
-
     const search = rawSearch.toLowerCase();
-    const name = rawName.toLowerCase();
-    const email = rawEmail.toLowerCase();
 
-    const query = userRepo
-      .createQueryBuilder("user")
-      .leftJoinAndSelect("user.role", "role")
-      .leftJoinAndSelect("user.department", "department");
+    const userRepo = AppDataSource.getRepository(User);
+    const [dbUsers, cognitoUsers] = await Promise.all([
+      userRepo.find({
+        relations: ["role", "department"],
+      }),
+      listCognitoUsers(),
+    ]);
 
-    if (requesterEmail) {
-      query.andWhere("user.email != :requesterEmail", { requesterEmail });
-    } else if (requesterId) {
-      query.andWhere("user.id != :requesterId", { requesterId });
-    }
+    const dbUsersById = new Map(dbUsers.map((user) => [user.id, user]));
+    const dbUsersByEmail = new Map(
+      dbUsers
+        .filter((user) => Boolean(user.email))
+        .map((user) => [user.email.toLowerCase(), user])
+    );
+    const dbUsersByCognitoSub = new Map(
+      dbUsers
+        .filter((user) => Boolean(user.cognitoSub))
+        .map((user) => [user.cognitoSub as string, user])
+    );
+    const dbUsersByCognitoUsername = new Map(
+      dbUsers
+        .filter((user) => Boolean(user.cognitoUsername))
+        .map((user) => [user.cognitoUsername as string, user])
+    );
 
-    if (search) {
-      query.andWhere(
-        "(LOWER(user.username) LIKE :search OR LOWER(user.email) LIKE :search)",
-        { search: `%${search}%` }
-      );
-    }
+    const matchedDbUserIds = new Set<string>();
 
-    if (name) {
-      query.andWhere("LOWER(user.username) LIKE :name", {
-        name: `%${name}%`,
+    const mergedUsers = cognitoUsers.map((cognitoUser) => {
+      const matchedDbUser =
+        (cognitoUser.cognitoSub &&
+          dbUsersByCognitoSub.get(cognitoUser.cognitoSub)) ||
+        (cognitoUser.email &&
+          dbUsersByEmail.get(cognitoUser.email.toLowerCase())) ||
+        dbUsersByCognitoUsername.get(cognitoUser.cognitoUsername) ||
+        null;
+
+      if (matchedDbUser) {
+        matchedDbUserIds.add(matchedDbUser.id);
+      }
+
+      return {
+        id: matchedDbUser?.id || `cognito:${cognitoUser.cognitoUsername}`,
+        localUserId: matchedDbUser?.id || null,
+        hasLocalProfile: Boolean(matchedDbUser),
+        cognitoUsername: cognitoUser.cognitoUsername,
+        cognitoSub: cognitoUser.cognitoSub,
+        username: matchedDbUser?.username || cognitoUser.username,
+        email: matchedDbUser?.email || cognitoUser.email || cognitoUser.cognitoUsername,
+        role:
+          matchedDbUser?.role ||
+          (cognitoUser.role ? { name: cognitoUser.role } : null),
+        isActive:
+          typeof matchedDbUser?.isActive === "boolean"
+            ? matchedDbUser.isActive
+            : cognitoUser.enabled,
+        department: matchedDbUser?.department || null,
+        createdAt: matchedDbUser?.createdAt?.toISOString?.() || cognitoUser.createdAt,
+        updatedAt: matchedDbUser?.updatedAt?.toISOString?.() || cognitoUser.updatedAt,
+        cognitoStatus: cognitoUser.status,
+      };
+    });
+
+    const localOnlyUsers = dbUsers
+      .filter((user) => !matchedDbUserIds.has(user.id))
+      .map((user) => ({
+        id: user.id,
+        localUserId: user.id,
+        hasLocalProfile: true,
+        cognitoUsername: user.cognitoUsername,
+        cognitoSub: user.cognitoSub,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        department: user.department,
+        createdAt: user.createdAt?.toISOString?.(),
+        updatedAt: user.updatedAt?.toISOString?.(),
+        cognitoStatus: null,
+      }));
+
+    const users = [...mergedUsers, ...localOnlyUsers]
+      .filter((user) => {
+        if (requesterEmail && user.email === requesterEmail) {
+          return false;
+        }
+
+        if (!requesterEmail && requesterId && user.localUserId === requesterId) {
+          return false;
+        }
+
+        if (!search) {
+          return true;
+        }
+
+        const searchable = [
+          user.username,
+          user.email,
+          typeof user.role === "string" ? user.role : user.role?.name,
+          user.department?.name,
+          user.cognitoStatus,
+        ]
+          .filter((value): value is string => Boolean(value))
+          .join(" ")
+          .toLowerCase();
+
+        return searchable.includes(search);
+      })
+      .sort((a, b) => {
+        const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bDate - aDate;
       });
-    }
 
-    if (email) {
-      query.andWhere("LOWER(user.email) LIKE :email", {
-        email: `%${email}%`,
-      });
-    }
-
-    const users = await query.getMany();
     res.json(users);
 
   } catch (error: any) {
@@ -348,25 +495,84 @@ export const updateUser = async (req: Request, res: Response) => {
     const departmentRepo = AppDataSource.getRepository(Department);
 
     const { username, email, role, isActive, departmentId } = bodyParsed.data;
+    const { user: existingUser, cognitoUsernameFromId } =
+      await findUserByIdOrCognitoIdentity(paramsParsed.data.id, userRepo);
 
-    const user = await userRepo.findOne({
-      where: { id: paramsParsed.data.id },
-      relations: ["role", "department"],
-    });
+    let user = existingUser;
+
+    if (!user && cognitoUsernameFromId) {
+      const cognitoUser = await getCognitoUserIdentity(cognitoUsernameFromId);
+      const nextUsername = username?.trim() || cognitoUser.email || cognitoUsernameFromId;
+
+      user = await service.create({
+        username: nextUsername,
+        email: cognitoUser.email || cognitoUsernameFromId,
+        cognitoUsername: cognitoUser.cognitoUsername,
+        cognitoSub: cognitoUser.cognitoSub,
+      });
+
+      user = await userRepo.findOne({
+        where: { id: user.id },
+        relations: ["role", "department"],
+      });
+    }
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const previousUsername = user.username;
+    const previousEmail = user.email;
+    const previousIsActive = user.isActive;
     const previousRoleName = user.role?.name ?? null;
     let nextCognitoRole: Roles | null = null;
+    let cognitoIdentifier = user.cognitoUsername?.trim() || null;
+
+    if (!cognitoIdentifier && user.email) {
+      try {
+        const cognitoIdentity = await getCognitoUserIdentity(user.email);
+        cognitoIdentifier = cognitoIdentity.cognitoUsername;
+        user.cognitoUsername = cognitoIdentity.cognitoUsername;
+        user.cognitoSub = cognitoIdentity.cognitoSub;
+      } catch (error) {
+        if (!isCognitoUserMissingError(error)) {
+          throw error;
+        }
+      }
+    }
 
     // update fields
-    if (typeof username === "string") user.username = username;
-    if (typeof email === "string" && email !== user.email) {
-      return res.status(400).json({
-        message: "Email updates are not supported for Cognito-managed users",
+    if (typeof username === "string") {
+      const trimmedUsername = username.trim();
+      if (!trimmedUsername) {
+        return res.status(400).json({ message: "Username is required" });
+      }
+
+      const existingUsernameUser = await userRepo.findOne({
+        where: { username: trimmedUsername },
       });
+
+      if (existingUsernameUser && existingUsernameUser.id !== user.id) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+
+      user.username = trimmedUsername;
+    }
+    if (typeof email === "string") {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      const existingEmailUser = await userRepo.findOne({
+        where: { email: normalizedEmail },
+      });
+
+      if (existingEmailUser && existingEmailUser.id !== user.id) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
+
+      user.email = normalizedEmail;
     }
     if (typeof isActive === "boolean") user.isActive = isActive;
 
@@ -493,24 +699,48 @@ export const updateUser = async (req: Request, res: Response) => {
     }
 
     const shouldSyncCognitoRole =
+      !!cognitoIdentifier &&
       !!nextCognitoRole &&
       nextCognitoRole !== normalizeRole(previousRoleName);
+    const shouldSyncCognitoProfile =
+      !!cognitoIdentifier &&
+      (user.username !== previousUsername || user.email !== previousEmail);
+    const shouldSyncCognitoStatus =
+      !!cognitoIdentifier && user.isActive !== previousIsActive;
 
-    if (shouldSyncCognitoRole && nextCognitoRole) {
-      await setCognitoUserRole(
-        user.cognitoUsername || user.email,
-        nextCognitoRole
-      );
+    if (shouldSyncCognitoProfile && cognitoIdentifier) {
+      await updateCognitoUserProfile(cognitoIdentifier, {
+        email: user.email,
+        name: user.username,
+      });
+    }
+
+    if (shouldSyncCognitoStatus && cognitoIdentifier) {
+      await setCognitoUserEnabled(cognitoIdentifier, user.isActive);
+    }
+
+    if (shouldSyncCognitoRole && nextCognitoRole && cognitoIdentifier) {
+      await setCognitoUserRole(cognitoIdentifier, nextCognitoRole);
     }
 
     try {
       await userRepo.save(user);
     } catch (error) {
-      if (shouldSyncCognitoRole && previousRoleName) {
-        await setCognitoUserRole(
-          user.cognitoUsername || user.email,
-          previousRoleName
-        ).catch(() => undefined);
+      if (shouldSyncCognitoRole && previousRoleName && cognitoIdentifier) {
+        await setCognitoUserRole(cognitoIdentifier, previousRoleName).catch(
+          () => undefined
+        );
+      }
+      if (shouldSyncCognitoStatus && cognitoIdentifier) {
+        await setCognitoUserEnabled(cognitoIdentifier, previousIsActive).catch(
+          () => undefined
+        );
+      }
+      if (shouldSyncCognitoProfile && cognitoIdentifier) {
+        await updateCognitoUserProfile(cognitoIdentifier, {
+          email: previousEmail,
+          name: previousUsername,
+        }).catch(() => undefined);
       }
       throw error;
     }
@@ -523,6 +753,6 @@ export const updateUser = async (req: Request, res: Response) => {
     res.json(updatedUser);
 
   } catch (error) {
-    res.status(500).json({ message: "Update failed" });
+    res.status(500).json({ message: getErrorMessage(error, "Update failed") });
   }
 };

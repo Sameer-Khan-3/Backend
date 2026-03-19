@@ -109,7 +109,7 @@ export {};
       mockDepartmentRepo.count.mockResolvedValue(2);
       mockDepartmentRepo.createQueryBuilder.mockReturnValue(topDepartmentsQuery);
 
-      const result = await new DashboardService().getMetrics("Admin", "user-1");
+      const result = await new DashboardService().getMetrics("Admin");
 
       expect(result).toEqual({
         employeeCount: 8,
@@ -160,21 +160,13 @@ export {};
 
       const result = await new DashboardService().getMetrics(
         "Manager",
-        "user-1",
-        "manager@example.com"
+        "manager@example.com",
+        "cognito-sub-1"
       );
 
       expect(resolveUserQuery.where).toHaveBeenCalledWith(
-        "user.id = :userIdentifier",
-        { userIdentifier: "user-1" }
-      );
-      expect(resolveUserQuery.orWhere).toHaveBeenCalledWith(
-        "user.username = :userIdentifier",
-        { userIdentifier: "user-1" }
-      );
-      expect(resolveUserQuery.orWhere).toHaveBeenCalledWith(
-        "user.email = :userEmail",
-        { userEmail: "manager@example.com" }
+        "user.cognitoSub = :cognitoSub",
+        { cognitoSub: "cognito-sub-1" }
       );
       expect(employeeCountQuery.andWhere).toHaveBeenCalledWith(
         "user.departmentId = :departmentId",
@@ -201,8 +193,8 @@ export {};
       await expect(
         new DashboardService().getMetrics(
           "Employee",
-          "user-1",
-          "employee@example.com"
+          "employee@example.com",
+          "cognito-sub-2"
         )
       ).rejects.toThrow("User is not assigned to any department");
     });
@@ -757,7 +749,7 @@ export {};
       ).rejects.toThrow("Default role not found. Seed roles first.");
     });
 
-    it("create stores a Cognito-managed password placeholder and saves the user", async () => {
+    it("create saves the user without storing a local password", async () => {
       const { UserService, mockRoleRepo } = await loadUserService();
       const employeeRole = { id: "role-1", name: "Employee" };
       const userInput = {
@@ -776,7 +768,6 @@ export {};
       expect(mockCreate).toHaveBeenCalledWith({
         email: "jane@example.com",
         username: "jane",
-        password: "COGNITO_MANAGED",
         role: employeeRole,
       });
       expect(mockSave).toHaveBeenCalledWith(createdUser);

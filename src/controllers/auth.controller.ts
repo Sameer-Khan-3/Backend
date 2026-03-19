@@ -8,7 +8,10 @@ import {
   getCognitoUserIdentity,
   setCognitoUserRole,
 } from "../services/cognito.service";
+import { AuthRequest } from "../middleware/auth.middleware";
+import { Role } from "../entities/role";
 import { Roles } from "../utils/roles.enum";
+import { resolveRequestRole } from "../utils/role.utils";
 
 const userService = new UserService();
 
@@ -20,6 +23,127 @@ const signUpSchema = z
     formattedName: z.string().trim().min(1).optional(),
   })
   .strict();
+
+const extractAuthDisplayName = (req: AuthRequest) => {
+  const candidates = [
+    req.user?.name,
+    req.user?.given_name,
+    req.user?.preferred_username,
+    req.user?.email,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return "User";
+};
+
+const buildUniqueUsername = async (
+  desiredUsername: string,
+  ignoreUserId?: string
+) => {
+  const userRepo = AppDataSource.getRepository(User);
+  const trimmed = desiredUsername.trim() || "User";
+  let candidate = trimmed;
+  let suffix = 1;
+
+  while (true) {
+    const existing = await userRepo.findOne({
+      where: { username: candidate },
+    });
+
+    if (!existing || existing.id === ignoreUserId) {
+      return candidate;
+    }
+
+    suffix += 1;
+    candidate = `${trimmed} ${suffix}`;
+  }
+};
+
+export async function syncProfile(req: AuthRequest, res: Response) {
+  try {
+    const email =
+      typeof req.user?.email === "string" ? req.user.email.trim().toLowerCase() : "";
+    const cognitoSub =
+      typeof req.user?.sub === "string" ? req.user.sub.trim() : "";
+    const cognitoUsername =
+      typeof req.user?.["cognito:username"] === "string"
+        ? req.user["cognito:username"].trim()
+        : email;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const userRepo = AppDataSource.getRepository(User);
+    const roleRepo = AppDataSource.getRepository(Role);
+    const roleName = resolveRequestRole(req);
+
+    const roleEntity = await roleRepo.findOne({
+      where: { name: roleName },
+    });
+
+    if (!roleEntity) {
+      return res.status(500).json({ message: "Role configuration is missing" });
+    }
+
+    let user =
+      (cognitoSub
+        ? await userRepo.findOne({
+            where: { cognitoSub },
+            relations: ["role", "department"],
+          })
+        : null) ||
+      (await userRepo.findOne({
+        where: [{ email }, { cognitoUsername: cognitoUsername || email }],
+        relations: ["role", "department"],
+      }));
+
+    const nextDisplayName = extractAuthDisplayName(req);
+
+    if (!user) {
+      const username = await buildUniqueUsername(nextDisplayName);
+      user = await userService.create({
+        email,
+        username,
+        cognitoUsername: cognitoUsername || email,
+        cognitoSub: cognitoSub || null,
+      });
+      user = await userRepo.findOne({
+        where: { id: user.id },
+        relations: ["role", "department"],
+      });
+    }
+
+    if (!user) {
+      return res.status(500).json({ message: "Failed to sync user profile" });
+    }
+
+    const nextUsername = await buildUniqueUsername(nextDisplayName, user.id);
+    user.email = email;
+    user.username = nextUsername;
+    user.cognitoUsername = cognitoUsername || email;
+    user.cognitoSub = cognitoSub || user.cognitoSub;
+    user.role = roleEntity;
+
+    await userRepo.save(user);
+
+    const syncedUser = await userRepo.findOne({
+      where: { id: user.id },
+      relations: ["role", "department"],
+    });
+
+    return res.status(200).json(syncedUser);
+  } catch (error: any) {
+    return res.status(500).json({
+      message: error?.message || "Failed to sync user profile",
+    });
+  }
+}
 
 export async function signUp(req: Request, res: Response) {
   try {

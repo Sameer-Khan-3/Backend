@@ -1,5 +1,6 @@
 import { Response, NextFunction } from "express";
 import { AuthRequest } from "./auth.middleware";
+import { resolveRequestRole } from "../utils/role.utils";
 
 export function authorizeRoles(...allowedRoles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -7,11 +8,8 @@ export function authorizeRoles(...allowedRoles: string[]) {
       return res.status(403).json({ message: "Forbidden" });
     }
     const normalizedAllowedRoles = allowedRoles.map((r) => r.toLowerCase());
-
-    const groups = req.user["cognito:groups"] || [];
-    const hasRole = groups.some((g: string) =>
-      normalizedAllowedRoles.includes(g.toLowerCase())
-    );
+    const resolvedRole = resolveRequestRole(req).toLowerCase();
+    const hasRole = normalizedAllowedRoles.includes(resolvedRole);
 
     if (!hasRole) {
       return res.status(403).json({ message: "Forbidden" });

@@ -11,6 +11,12 @@ export class User extends BaseEntity {
   @Column({ unique: true })
   email: string;
 
+  @Column({ type: "varchar", nullable: true, unique: true })
+  cognitoUsername: string | null;
+
+  @Column({ type: "varchar", nullable: true, unique: true })
+  cognitoSub: string | null;
+
   @Column({ default: true })
   isActive: boolean;
 
@@ -19,13 +25,13 @@ export class User extends BaseEntity {
   })
   department: Department | null;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", nullable: true })
   departmentId: string | null;
 
   @ManyToOne(() => Role, (role) => role.users, { nullable: true })
   @JoinColumn({ name: "roleId" })
   role: Role | null;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", nullable: true })
   roleId: string | null;
 }
