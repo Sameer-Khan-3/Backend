@@ -7,6 +7,7 @@ const departmentRepo = AppDataSource.getRepository(Department);
 
 type DashboardUserScope = {
   departmentId?: string;
+  departmentName?: string;
 };
 
 export class DashboardService {
@@ -99,6 +100,7 @@ export class DashboardService {
       totalUsers,
       activeUsers,
       inactiveUsers,
+      currentDepartment: scope.departmentName || null,
       recentUsers,
       topDepartments: topDepartments.map((department) => ({
         id: department.id,
@@ -138,11 +140,19 @@ export class DashboardService {
       throw new Error("User is not assigned to any department");
     }
 
-    return { departmentId: currentUser.department.id };
+    return {
+      departmentId: currentUser.department.id,
+      departmentName: currentUser.department.name,
+    };
   }
 
   private buildScopedUserQuery(scope: DashboardUserScope) {
-    const query = userRepo.createQueryBuilder("user").where("1 = 1");
+    const query = userRepo
+      .createQueryBuilder("user")
+      .where("1 = 1")
+      .andWhere("NOT (user.isActive = :deletedInactive AND user.roleId IS NULL)", {
+        deletedInactive: false,
+      });
     const whereClause = this.buildScopeWhereClause(scope);
 
     if (whereClause) {
