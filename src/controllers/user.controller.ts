@@ -10,7 +10,6 @@ import {
   createCognitoUser,
   deleteCognitoUser,
   getCognitoUserIdentity,
-  listCognitoUsers,
   setCognitoUserEnabled,
   updateCognitoUserProfile,
   setCognitoUserRole,
@@ -48,28 +47,34 @@ const extractCognitoUsernameFromId = (id: string) => {
   return cognitoUsername || null;
 };
 
-const findUserByIdOrCognitoIdentity = async (
-  id: string,
-  userRepo: ReturnType<typeof AppDataSource.getRepository<User>>
-) => {
+const buildUserLookupWhere = (id: string) => {
   const cognitoUsernameFromId = extractCognitoUsernameFromId(id);
 
   if (!cognitoUsernameFromId) {
     return {
-      user: await userRepo.findOne({
-        where: { id },
-        relations: ["role", "department"],
-      }),
+      where: { id },
       cognitoUsernameFromId: null,
     };
   }
 
-  const user = await userRepo.findOne({
+  return {
     where: [
-      { id },
       { cognitoUsername: cognitoUsernameFromId },
       { email: cognitoUsernameFromId },
+      { cognitoSub: cognitoUsernameFromId },
     ],
+    cognitoUsernameFromId,
+  };
+};
+
+const findUserByIdOrCognitoIdentity = async (
+  id: string,
+  userRepo: ReturnType<typeof AppDataSource.getRepository<User>>
+) => {
+  const { where, cognitoUsernameFromId } = buildUserLookupWhere(id);
+
+  const user = await userRepo.findOne({
+    where,
     relations: ["role", "department"],
   });
 
@@ -97,6 +102,15 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 
   return fallback;
 };
+
+const isSoftDeletedUser = (
+  user:
+    | User
+    | {
+        isActive?: boolean;
+        role?: Role | { name?: string } | null;
+      }
+) => !user.isActive && !user.role;
 
 const resolveCurrentUser = async (req: AuthRequest) => {
   const userRepo = AppDataSource.getRepository(User);
@@ -172,16 +186,10 @@ export const deleteUser = async (req: Request, res: Response) => {
       });
     }
     const { id } = parsed.data;
-    const cognitoUsernameFromId = extractCognitoUsernameFromId(id);
+    const { where, cognitoUsernameFromId } = buildUserLookupWhere(id);
 
     const user = await userRepo.findOne({
-      where: cognitoUsernameFromId
-        ? [
-            { id },
-            { cognitoUsername: cognitoUsernameFromId },
-            { email: cognitoUsernameFromId },
-          ]
-        : { id },
+      where,
     });
 
     if (!user && !cognitoUsernameFromId) {
@@ -200,7 +208,7 @@ export const deleteUser = async (req: Request, res: Response) => {
 
     if (cognitoUsernameToDelete) {
       try {
-        await deleteCognitoUser(cognitoUsernameToDelete);
+        await setCognitoUserEnabled(cognitoUsernameToDelete, false);
       } catch (error) {
         if (!isCognitoUserMissingError(error)) {
           throw error;
@@ -217,7 +225,10 @@ export const deleteUser = async (req: Request, res: Response) => {
           }
         }
 
-        await transactionManager.remove(User, user);
+        user.isActive = false;
+        user.role = null;
+        user.department = null;
+        await transactionManager.save(User, user);
       });
     }
 
@@ -246,69 +257,12 @@ export async function getUsers(req: AuthRequest, res: Response) {
     const search = rawSearch.toLowerCase();
 
     const userRepo = AppDataSource.getRepository(User);
-    const [dbUsers, cognitoUsers] = await Promise.all([
-      userRepo.find({
+    const users = (
+      await userRepo.find({
         relations: ["role", "department"],
-      }),
-      listCognitoUsers(),
-    ]);
-
-    const dbUsersById = new Map(dbUsers.map((user) => [user.id, user]));
-    const dbUsersByEmail = new Map(
-      dbUsers
-        .filter((user) => Boolean(user.email))
-        .map((user) => [user.email.toLowerCase(), user])
-    );
-    const dbUsersByCognitoSub = new Map(
-      dbUsers
-        .filter((user) => Boolean(user.cognitoSub))
-        .map((user) => [user.cognitoSub as string, user])
-    );
-    const dbUsersByCognitoUsername = new Map(
-      dbUsers
-        .filter((user) => Boolean(user.cognitoUsername))
-        .map((user) => [user.cognitoUsername as string, user])
-    );
-
-    const matchedDbUserIds = new Set<string>();
-
-    const mergedUsers = cognitoUsers.map((cognitoUser) => {
-      const matchedDbUser =
-        (cognitoUser.cognitoSub &&
-          dbUsersByCognitoSub.get(cognitoUser.cognitoSub)) ||
-        (cognitoUser.email &&
-          dbUsersByEmail.get(cognitoUser.email.toLowerCase())) ||
-        dbUsersByCognitoUsername.get(cognitoUser.cognitoUsername) ||
-        null;
-
-      if (matchedDbUser) {
-        matchedDbUserIds.add(matchedDbUser.id);
-      }
-
-      return {
-        id: matchedDbUser?.id || `cognito:${cognitoUser.cognitoUsername}`,
-        localUserId: matchedDbUser?.id || null,
-        hasLocalProfile: Boolean(matchedDbUser),
-        cognitoUsername: cognitoUser.cognitoUsername,
-        cognitoSub: cognitoUser.cognitoSub,
-        username: matchedDbUser?.username || cognitoUser.username,
-        email: matchedDbUser?.email || cognitoUser.email || cognitoUser.cognitoUsername,
-        role:
-          matchedDbUser?.role ||
-          (cognitoUser.role ? { name: cognitoUser.role } : null),
-        isActive:
-          typeof matchedDbUser?.isActive === "boolean"
-            ? matchedDbUser.isActive
-            : cognitoUser.enabled,
-        department: matchedDbUser?.department || null,
-        createdAt: matchedDbUser?.createdAt?.toISOString?.() || cognitoUser.createdAt,
-        updatedAt: matchedDbUser?.updatedAt?.toISOString?.() || cognitoUser.updatedAt,
-        cognitoStatus: cognitoUser.status,
-      };
-    });
-
-    const localOnlyUsers = dbUsers
-      .filter((user) => !matchedDbUserIds.has(user.id))
+      })
+    )
+      .filter((user) => !isSoftDeletedUser(user))
       .map((user) => ({
         id: user.id,
         localUserId: user.id,
@@ -323,9 +277,7 @@ export async function getUsers(req: AuthRequest, res: Response) {
         createdAt: user.createdAt?.toISOString?.(),
         updatedAt: user.updatedAt?.toISOString?.(),
         cognitoStatus: null,
-      }));
-
-    const users = [...mergedUsers, ...localOnlyUsers]
+      }))
       .filter((user) => {
         if (requesterEmail && user.email === requesterEmail) {
           return false;
@@ -383,6 +335,9 @@ export const getUsersByDepartment = async (req: AuthRequest, res: Response) => {
   try {
     const userRepo = AppDataSource.getRepository(User);
     const currentUser = await resolveCurrentUser(req);
+    const requesterId = req.user?.id ?? null;
+    const requesterEmail = req.user?.email || null;
+
     if (!currentUser) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -429,7 +384,17 @@ export const getUsersByDepartment = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const users = await query.getMany();
+    const users = (await query.getMany()).filter((user) => {
+      if (requesterEmail && user.email === requesterEmail) {
+        return false;
+      }
+
+      if (!requesterEmail && requesterId && user.id === requesterId) {
+        return false;
+      }
+
+      return true;
+    });
 
     res.json(users);
   } catch (error) {
@@ -473,7 +438,7 @@ export async function getUser(req: AuthRequest, res: Response) {
   }
 }
 
-export const updateUser = async (req: Request, res: Response) => {
+export const updateUser = async (req: AuthRequest, res: Response) => {
   try {
     const paramsParsed = idParamSchema.safeParse(req.params);
     if (!paramsParsed.success) {
@@ -519,6 +484,37 @@ export const updateUser = async (req: Request, res: Response) => {
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    const requesterRole = resolveRequestRole(req).toLowerCase();
+    const isAdminRequester = requesterRole === Roles.Admin.toLowerCase();
+    const isManagerRequester = requesterRole === Roles.Manager.toLowerCase();
+
+    if (!isAdminRequester && !isManagerRequester) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    if (isManagerRequester) {
+      const currentUser = await resolveCurrentUser(req);
+      const requestedFields = Object.entries(bodyParsed.data).filter(
+        ([, value]) => value !== undefined
+      );
+      const isStatusOnlyRequest =
+        requestedFields.length === 1 && typeof isActive === "boolean";
+
+      if (
+        !currentUser?.department?.id ||
+        user.departmentId !== currentUser.department.id
+      ) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (!isStatusOnlyRequest) {
+        return res.status(403).json({
+          message:
+            "Managers can only update status for users in their department",
+        });
+      }
     }
 
     const previousUsername = user.username;
