@@ -70,7 +70,10 @@ export class UserService {
 
   async remove(id: string) {
     const user = await this.findOne(id);
-    await userRepo.remove(user);
+    user.isActive = false;
+    user.role = null;
+    user.department = null;
+    await userRepo.save(user);
     return { message: "User deleted successfully" };
   }
 }

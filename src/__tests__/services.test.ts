@@ -118,6 +118,7 @@ export {};
         totalUsers: 10,
         activeUsers: 7,
         inactiveUsers: 3,
+        currentDepartment: null,
         recentUsers,
         topDepartments: [
           { id: "dept-1", name: "Engineering", count: 6, manager: "Alice" },
@@ -865,13 +866,30 @@ export {};
 
     it("remove deletes the user and returns a success message", async () => {
       const { UserService } = await loadUserService();
-      const user = { id: "user-1" };
+      const user: any = {
+        id: "user-1",
+        isActive: true,
+        role: { id: "role-1", name: "Employee" },
+        department: { id: "dept-1" },
+      };
       mockFindOne.mockResolvedValue(user);
-      mockRemove.mockResolvedValue(undefined);
+      mockSave.mockResolvedValue({
+        ...user,
+        isActive: false,
+        role: null,
+        department: null,
+      });
 
       const result = await new UserService().remove("user-1");
 
-      expect(mockRemove).toHaveBeenCalledWith(user);
+      expect(mockSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "user-1",
+          isActive: false,
+          role: null,
+          department: null,
+        })
+      );
       expect(result).toEqual({ message: "User deleted successfully" });
     });
   });
