@@ -8,6 +8,7 @@ const roleRepo = AppDataSource.getRepository(Role);
 
 type CreateUserInput = Partial<User> & {
   password?: string;
+  roleName?: Roles;
 };
 
 type UpdateUserInput = Partial<User> & {
@@ -24,18 +25,20 @@ export class UserService {
       throw new Error("User already exists");
     }
 
-    const employeeRole = await roleRepo.findOne({
-      where: { name: Roles.Employee },
+    const requestedRole = data.roleName ?? Roles.Employee;
+
+    const roleEntity = await roleRepo.findOne({
+      where: { name: requestedRole },
     });
 
-    if (!employeeRole) {
-      throw new Error("Default role not found. Seed roles first.");
+    if (!roleEntity) {
+      throw new Error("Role not found. Seed roles first.");
     }
 
-    const { password: _password, ...persistedData } = data;
+    const { password: _password, roleName: _roleName, ...persistedData } = data;
     const user = userRepo.create({
       ...persistedData,
-      role: employeeRole,
+      role: roleEntity,
     });
 
     return userRepo.save(user);
