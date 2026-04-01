@@ -22,6 +22,7 @@ const service = new UserService();
 const createUserSchema = z.object({
   username: z.string().trim().min(1, "Username is required"),
   email: z.string().email("Invalid email format"),
+  role: z.nativeEnum(Roles).optional(),
 });
 
 const updateUserSchema = z.object({
@@ -132,7 +133,7 @@ const resolveCurrentUser = async (req: AuthRequest) => {
   });
 };
 
-export async function createUser(req: Request, res: Response) {
+export async function createUser(req: AuthRequest, res: Response) {
   try {
     const parsed = createUserSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -141,11 +142,22 @@ export async function createUser(req: Request, res: Response) {
         errors: parsed.error.flatten().fieldErrors,
       });
     }
-    const { username, email } = parsed.data;
-    await createCognitoUser(email, "Employee", {
+
+    const { username, email, role } = parsed.data;
+    const requesterRole = resolveRequestRole(req);
+    const selectedRole = role ?? Roles.Employee;
+
+    if (requesterRole === Roles.Manager && selectedRole !== Roles.Employee) {
+      return res.status(403).json({
+        message: "Managers can only create employees",
+      });
+    }
+
+    await createCognitoUser(email, selectedRole, {
       formattedName: username,
       suppressMessage: false,
     });
+
     const cognitoUser = await getCognitoUserIdentity(email);
 
     let user: User;
@@ -155,6 +167,7 @@ export async function createUser(req: Request, res: Response) {
         email,
         cognitoUsername: cognitoUser.cognitoUsername,
         cognitoSub: cognitoUser.cognitoSub,
+        roleName: selectedRole,
       });
     } catch (error) {
       await deleteCognitoUser(cognitoUser.cognitoUsername).catch(() => undefined);
@@ -173,6 +186,7 @@ export async function createUser(req: Request, res: Response) {
     });
   }
 }
+
 
 export const deleteUser = async (req: Request, res: Response) => {
   try {
